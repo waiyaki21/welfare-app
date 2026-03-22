@@ -32,7 +32,9 @@ class NativeAppServiceProvider implements ProvidesPhpIni
         Window::open()
             ->width(1920)
             ->height(1080)
-            ->title('Chama App')
+            ->minWidth(1280)
+            ->minHeight(720)
+            ->title('Welfare App')
             ->rememberState() // Restores previous window position
             ->maximized(true)
             ->showDevTools(false);
@@ -53,6 +55,9 @@ class NativeAppServiceProvider implements ProvidesPhpIni
      */
     public function phpIni(): array
     {
-        return [];
+        return [
+            'memory_limit' => '512M',
+            'max_execution_time' => '0',
+        ];
     }
 }

@@ -13,9 +13,9 @@ return [
      * usually in the form of a reverse domain name.
      * For example: com.nativephp.app
      */
-    'app_id' => env('NATIVEPHP_APP_ID', 'com.nativephp.app'),
+    'app_id' => env('NATIVEPHP_APP_ID', 'com.athoni.welfare'),
 
-    /**
+    /** 
      * If your application allows deep linking, you can specify the scheme
      * to use here. This is the scheme that will be used to open your
      * application from within other applications.
@@ -29,7 +29,7 @@ return [
     /**
      * The author of your application.
      */
-    'author' => env('NATIVEPHP_APP_AUTHOR'),
+    'author' => env('NATIVEPHP_APP_AUTHOR', 'Waiyaki Wanjohi'),
 
     /**
      * The copyright notice for your application.
@@ -39,7 +39,7 @@ return [
     /**
      * The description of your application.
      */
-    'description' => env('NATIVEPHP_APP_DESCRIPTION', 'An awesome app built with NativePHP'),
+    'description' => env('NATIVEPHP_APP_DESCRIPTION', 'Athoni Welfare Association Financial Ledger App'),
 
     /**
      * The Website of your application.
@@ -163,11 +163,15 @@ return [
      * Define your own scripts to run before and after the build process.
      */
     'prebuild' => [
-        // 'npm run build',
+        'php artisan native:migrate:fresh',
+        'php artisan optimize',
+        'php artisan view:cache',
+        'php artisan route:cache',
+        'php artisan config:cache',
     ],
 
     'postbuild' => [
-        // 'rm -rf public/build',
+        // 'npm run release', // Run a command after the build
     ],
 
     /**
