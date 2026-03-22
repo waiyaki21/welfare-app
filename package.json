@@ -1,6 +1,10 @@
 {
     "private": true,
     "type": "module",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/waiyaki21/welfare-app.git"
+    },
     "scripts": {
         "dev": "vite",
         "build": "vite build"
