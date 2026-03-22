@@ -1,0 +1,220 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\Member;
+use App\Models\FinancialYear;
+use App\Models\MemberFinancial;
+use App\Models\BankBalance;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+
+class SpreadsheetImportService
+{
+    const MONTHS = [
+        'january', 'february', 'march', 'april', 'may', 'june',
+        'july', 'august', 'september', 'october', 'november', 'december',
+    ];
+
+    const BANK_MONTHS = [
+        'JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
+        'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER',
+    ];
+
+    /**
+     * Import a spreadsheet file and return a summary.
+     */
+    public function import(string $filePath): array
+    {
+        $spreadsheet = IOFactory::load($filePath);
+        $results = [
+            'sheets_processed' => 0,
+            'members_created'  => 0,
+            'members_updated'  => 0,
+            'records_inserted' => 0,
+            'errors'           => [],
+        ];
+
+        foreach ($spreadsheet->getAllSheets() as $sheet) {
+            try {
+                $year = $this->detectYear($sheet->getTitle());
+                if (!$year) continue;
+
+                $this->processSheet($sheet, $year, $results);
+                $results['sheets_processed']++;
+            } catch (\Throwable $e) {
+                $results['errors'][] = "Sheet [{$sheet->getTitle()}]: " . $e->getMessage();
+            }
+        }
+
+        return $results;
+    }
+
+    private function detectYear(string $sheetTitle): ?int
+    {
+        if (preg_match('/\b(20\d{2})\b/', $sheetTitle, $m)) {
+            return (int) $m[1];
+        }
+        return null;
+    }
+
+    private function processSheet($sheet, int $year, array &$results): void
+    {
+        $rows = $sheet->toArray(null, true, true, false);
+
+        // Detect header row (contains "MEMBERS NAME")
+        $headerRow = null;
+        $monthColumns = []; // month_key => column_index
+        $colMap = [];
+
+        foreach ($rows as $rowIdx => $row) {
+            $rowStr = implode(' ', array_map('strtoupper', array_filter($row, fn($v) => is_string($v))));
+            if (str_contains($rowStr, 'MEMBERS NAME') || str_contains($rowStr, 'MEMBER')) {
+                $headerRow = $rowIdx;
+                // Map columns
+                foreach ($row as $colIdx => $cell) {
+                    $upper = strtoupper(trim((string) $cell));
+                    if ($upper === 'NO') $colMap['no'] = $colIdx;
+                    if (str_contains($upper, 'NAME')) $colMap['name'] = $colIdx;
+                    if (str_contains($upper, 'TELEPHONE') || str_contains($upper, 'PHONE')) $colMap['phone'] = $colIdx;
+                    if (str_contains($upper, 'B/F')) $colMap['bf'] = $colIdx;
+                    if (str_contains($upper, 'C/F')) $colMap['cf'] = $colIdx;
+                    if (str_contains($upper, 'WELFARE') && str_contains($upper, 'TOTAL')) $colMap['total_welfare'] = $colIdx;
+                    if ($upper === 'DEV.' || $upper === 'DEV') $colMap['development'] = $colIdx;
+                    if (str_contains($upper, 'OWING')) $colMap['welfare_owing'] = $colIdx;
+                    if (str_contains($upper, 'INVESTMENT')) $colMap['total_investment'] = $colIdx;
+
+                    foreach (self::MONTHS as $monthKey) {
+                        if (strtoupper($monthKey) === $upper) {
+                            $monthColumns[$monthKey] = $colIdx;
+                        }
+                    }
+                }
+                break;
+            }
+        }
+
+        if ($headerRow === null) {
+            throw new \RuntimeException("Could not find header row");
+        }
+
+        $financialYear = FinancialYear::firstOrCreate(['year' => $year], ['sheet_name' => $sheet->getTitle()]);
+
+        DB::transaction(function () use ($rows, $headerRow, $colMap, $monthColumns, $financialYear, &$results) {
+            foreach ($rows as $rowIdx => $row) {
+                if ($rowIdx <= $headerRow) continue;
+
+                $memberNo = $row[$colMap['no'] ?? 0] ?? null;
+                $name     = isset($colMap['name']) ? trim((string) ($row[$colMap['name']] ?? '')) : '';
+
+                // Stop at totals row
+                if (!$memberNo || !is_numeric($memberNo) || empty($name)) continue;
+                if (strtoupper($name) === 'TOTAL') break;
+
+                $phone = isset($colMap['phone']) ? $this->cleanPhone($row[$colMap['phone']] ?? '') : null;
+
+                // Upsert member
+                $existing = Member::where('member_number', (int) $memberNo)->first();
+                if ($existing) {
+                    $existing->update(['name' => $name, 'phone' => $phone]);
+                    $results['members_updated']++;
+                    $member = $existing;
+                } else {
+                    $member = Member::create([
+                        'member_number' => (int) $memberNo,
+                        'name'          => $name,
+                        'phone'         => $phone,
+                        'is_active'     => true,
+                    ]);
+                    $results['members_created']++;
+                }
+
+                $monthlyData = [];
+                foreach (self::MONTHS as $month) {
+                    $monthlyData[$month] = isset($monthColumns[$month])
+                        ? $this->toFloat($row[$monthColumns[$month]] ?? 0)
+                        : 0.0;
+                }
+
+                $financial = MemberFinancial::updateOrCreate(
+                    ['member_id' => $member->id, 'financial_year_id' => $financialYear->id],
+                    array_merge($monthlyData, [
+                        'contributions_brought_forward'    => $this->toFloat($row[$colMap['bf'] ?? -1] ?? 0),
+                        'total_contributions_carried_forward' => $this->toFloat($row[$colMap['cf'] ?? -1] ?? 0),
+                        'total_welfare'                    => $this->toFloat($row[$colMap['total_welfare'] ?? -1] ?? 0),
+                        'development'                      => $this->toFloat($row[$colMap['development'] ?? -1] ?? 0),
+                        'welfare_owing'                    => $this->toFloat($row[$colMap['welfare_owing'] ?? -1] ?? 0),
+                        'total_investment'                 => $this->toFloat($row[$colMap['total_investment'] ?? -1] ?? 0),
+                        'notes'                            => $row[23] ?? null,
+                    ])
+                );
+
+                $results['records_inserted']++;
+            }
+
+            // Parse bank balances row
+            $this->parseBankBalances($rows, $headerRow, $monthColumns, $financialYear);
+        });
+    }
+
+    private function parseBankBalances(array $rows, int $headerRow, array $monthColumns, FinancialYear $financialYear): void
+    {
+        $balanceData = [];
+        foreach ($rows as $rowIdx => $row) {
+            if ($rowIdx <= $headerRow) continue;
+
+            $label = strtoupper(trim(implode(' ', array_filter(array_slice($row, 0, 6), fn($v) => is_string($v) && strlen(trim($v)) > 0))));
+
+            if (str_contains($label, 'BANK BALANCE') && str_contains($label, 'C/F')) {
+                foreach ($monthColumns as $month => $colIdx) {
+                    $val = $this->toFloat($row[$colIdx] ?? 0);
+                    if ($val) $balanceData[$month]['balance'] = $val;
+                }
+            }
+            if (str_contains($label, 'BANK CHARGES')) {
+                foreach ($monthColumns as $month => $colIdx) {
+                    $val = $this->toFloat($row[$colIdx] ?? 0);
+                    if ($val) $balanceData[$month]['bank_charges'] = $val;
+                }
+            }
+            if (str_contains($label, 'AUDIT')) {
+                foreach ($monthColumns as $month => $colIdx) {
+                    $val = $this->toFloat($row[$colIdx] ?? 0);
+                    if ($val) $balanceData[$month]['audit_fees'] = $val;
+                }
+            }
+            if (str_contains($label, 'CIC')) {
+                foreach ($monthColumns as $month => $colIdx) {
+                    $val = $this->toFloat($row[$colIdx] ?? 0);
+                    if ($val) $balanceData[$month]['cic_transfer'] = $val;
+                }
+            }
+        }
+
+        foreach ($balanceData as $month => $data) {
+            BankBalance::updateOrCreate(
+                ['financial_year_id' => $financialYear->id, 'month' => ucfirst($month)],
+                [
+                    'balance'              => $data['balance'] ?? 0,
+                    'bank_charges'         => $data['bank_charges'] ?? 0,
+                    'audit_fees'           => $data['audit_fees'] ?? 0,
+                    'cic_transfer'         => $data['cic_transfer'] ?? 0,
+                    'cash_withdrawal_agm'  => $data['cash_withdrawal_agm'] ?? 0,
+                ]
+            );
+        }
+    }
+
+    private function cleanPhone($val): ?string
+    {
+        $phone = preg_replace('/[^0-9+]/', '', (string) $val);
+        return strlen($phone) >= 9 ? $phone : null;
+    }
+
+    private function toFloat($val): float
+    {
+        if ($val === null || $val === '') return 0.0;
+        return (float) str_replace([',', ' '], '', (string) $val);
+    }
+}
