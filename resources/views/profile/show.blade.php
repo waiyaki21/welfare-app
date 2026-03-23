@@ -18,12 +18,7 @@
                 <div style="font-family:'DM Serif Display',serif;font-size:1.2rem;color:var(--forest)">{{ Auth::user()->name }}</div>
                 <div class="dim text-sm" style="margin-top:2px">{{ Auth::user()->email }}</div>
                 <div style="margin-top:6px;display:flex;gap:6px;">
-                    @if(Auth::user()->hasGoogleAuth())
-                        <span class="badge badge-b">Google</span>
-                    @endif
-                    @if(Auth::user()->hasPasswordAuth())
-                        <span class="badge badge-mid">Email / Password</span>
-                    @endif
+                    <span class="badge badge-mid">Email / Password</span>
                     <span class="badge badge-g">{{ ucfirst(Auth::user()->role) }}</span>
                 </div>
             </div>
@@ -118,6 +113,67 @@
                 </div>
             </div>
             <button type="submit" class="btn btn-primary" style="width:auto;display:inline-flex;">Update Profile</button>
+        </form>
+    </div>
+</div>
+
+{{-- Import Settings --}}
+<div class="card mb-6">
+    <div class="card-head"><div class="card-title">Import Settings</div></div>
+    <div class="card-body">
+        <form method="POST" action="{{ route('profile.import-settings') }}">
+            @csrf
+            <div class="form-group">
+                <label class="checkbox-label" style="margin-bottom:14px;">
+                    <input type="checkbox" name="import_yearly_enabled" value="1"
+                           {{ $yearlyImportEnabled ? 'checked' : '' }}
+                           style="width:17px;height:17px;accent-color:var(--leaf);">
+                    <div>
+                        <div style="font-weight:500;">Full-Year Import</div>
+                        <div class="text-sm text-mid" style="margin-top:2px;">
+                            Show the <em>Import Year</em> button on the dashboard. Allows uploading the full annual ledger spreadsheet.
+                        </div>
+                    </div>
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" name="import_monthly_enabled" value="1"
+                           {{ $monthlyImportEnabled ? 'checked' : '' }}
+                           style="width:17px;height:17px;accent-color:var(--leaf);">
+                    <div>
+                        <div style="font-weight:500;">Monthly Import</div>
+                        <div class="text-sm text-mid" style="margin-top:2px;">
+                            Show the <em>Import Month</em> button on the dashboard. Allows downloading a member template and uploading monthly payments and welfare amounts.
+                        </div>
+                    </div>
+                </label>
+            </div>
+            <button type="submit" class="btn btn-primary" style="width:auto;display:inline-flex;">Save Import Settings</button>
+        </form>
+    </div>
+</div>
+
+{{-- Theme --}}
+<div class="card mb-6">
+    <div class="card-head"><div class="card-title">Theme</div></div>
+    <div class="card-body">
+        <form method="POST" action="{{ route('profile.theme') }}">
+            @csrf
+            <div class="form-group">
+                <label class="form-label">Colour mode</label>
+                <div class="flex gap-3">
+                    @foreach(['light' => 'Light', 'dark' => 'Dark (coming soon)', 'system' => 'System'] as $val => $lbl)
+                    <label style="display:flex;align-items:center;gap:7px;cursor:{{ $val === 'dark' ? 'not-allowed' : 'pointer' }};opacity:{{ $val === 'dark' ? '.45' : '1' }};">
+                        <input type="radio" name="theme" value="{{ $val }}"
+                               {{ $theme === $val ? 'checked' : '' }}
+                               {{ $val === 'dark' ? 'disabled' : '' }}
+                               style="accent-color:var(--leaf);">
+                        <span style="font-size:.9rem;">{{ $lbl }}</span>
+                    </label>
+                    @endforeach
+                </div>
+                <div class="form-hint">Dark mode is reserved for a future update.</div>
+            </div>
+            <button type="submit" class="btn btn-primary" style="width:auto;display:inline-flex;">Save Theme</button>
         </form>
     </div>
 </div>

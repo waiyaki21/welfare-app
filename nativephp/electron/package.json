@@ -1,9 +1,9 @@
 {
-    "name": "laravel-dev",
+    "name": "welfare-app-dev",
     "version": "1.0.0",
-    "description": "An awesome app built with NativePHP",
+    "description": "Athoni Welfare Association Financial Ledger App",
     "main": "./out/main/index.js",
-    "author": null,
+    "author": "Athoni Welfare Association",
     "homepage": "https://nativephp.com",
     "type": "module",
     "engines": {

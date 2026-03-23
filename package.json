@@ -3,7 +3,16 @@
     "type": "module",
     "repository": {
         "type": "git",
-        "url": "https://github.com/waiyaki21/welfare-app.git"
+        "url": "git+https://github.com/waiyaki21/welfare-app.git"
+    },
+    "build": {
+        "publish": [
+            {
+                "provider": "github",
+                "owner": "waiyaki21",
+                "repo": "welfare-app"
+            }
+        ]
     },
     "scripts": {
         "dev": "vite",

@@ -13,9 +13,22 @@
         $appSub      = \App\Models\AppSetting::appSubtitle();
         $sbColor     = \App\Models\AppSetting::get('sidebar_color', '#1a3a2a');
         $sbCollapsed = request()->cookie('sb_collapsed') === '1';
-        // precompute counts for badges
-        $fyCount  = \App\Models\FinancialYear::count();
-        $memCount = \App\Models\Member::count();
+        
+        // Precompute counts and years
+        $fyCount     = \App\Models\FinancialYear::count();
+        $years       = \App\Models\FinancialYear::orderByDesc('year')->pluck('year');
+        
+        // 1. Get the selected year from request OR default to the latest year in DB OR current system year
+        $selectedYear = (int) request('year', $years->first() ?? date('Y'));
+
+        // 2. Find that specific FinancialYear and get the count of memberFinancials
+        // We use withCount() so Laravel performs a "SELECT COUNT" rather than loading all rows
+        $yearRecord = \App\Models\FinancialYear::where('year', $selectedYear)
+            ->withCount('memberFinancials')
+            ->first();
+
+        // 3. Set the memCount (default to 0 if no record exists for that year)
+        $memCount = $yearRecord ? $yearRecord->member_financials_count : 0;
     @endphp
     <style>
         :root {

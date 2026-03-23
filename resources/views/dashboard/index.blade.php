@@ -10,13 +10,47 @@
         @endforeach
     </select>
 </form>
+@if(\App\Models\AppSetting::monthlyImportEnabled())
+<button onclick="document.getElementById('monthlyImportModal').classList.add('open')" class="btn btn-outline btn-sm" style="white-space:nowrap;flex-shrink:0;">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+    Import Month
+</button>
+@endif
+@if(\App\Models\AppSetting::yearlyImportEnabled())
 <button onclick="document.getElementById('importModal').classList.add('open')" class="btn btn-primary btn-sm" style="white-space:nowrap;flex-shrink:0;">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-    Import
+    Import Year
 </button>
+@endif
 @endsection
 
 @section('content')
+{{-- Monthly import results --}}
+@if(session('monthly_import_results'))
+@php $mr = session('monthly_import_results'); @endphp
+<div class="card mb-6" style="border-left:3px solid var(--sage);">
+    <div class="card-head">
+        <div class="card-title" style="color:var(--forest)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:6px;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            Monthly Import — {{ $mr['month'] ?? '' }} {{ $mr['year'] ?? '' }}
+        </div>
+        <div class="flex gap-3 text-sm" style="color:var(--mid);">
+            <span><strong style="color:var(--leaf)">{{ $mr['payments_created'] ?? 0 }}</strong> payments added</span>
+            <span><strong style="color:var(--mid)">{{ $mr['payments_skipped'] ?? 0 }}</strong> skipped (existing)</span>
+            <span><strong style="color:var(--leaf)">{{ $mr['welfare_created'] ?? 0 }}</strong> welfare added</span>
+            <span><strong style="color:var(--mid)">{{ $mr['welfare_skipped'] ?? 0 }}</strong> skipped (existing)</span>
+        </div>
+    </div>
+    @if(!empty($mr['errors']))
+    <div class="card-body" style="padding:12px 20px;">
+        <div class="text-sm" style="color:var(--rust);font-weight:600;margin-bottom:6px;">Warnings</div>
+        @foreach($mr['errors'] as $err)
+            <div class="text-sm" style="color:var(--mid);padding:2px 0;">• {{ $err }}</div>
+        @endforeach
+    </div>
+    @endif
+</div>
+@endif
 
 {{-- Import results (shown after a successful import redirect) --}}
 @if(session('import_results'))
@@ -319,6 +353,95 @@
     </div>
 </div>
 
+{{-- ── Monthly Import Modal ──────────────────────────────────────────────── --}}
+<div class="modal-backdrop" id="monthlyImportModal">
+    <div class="modal" style="max-width:540px;">
+        <div class="modal-head">
+            <div class="modal-title">Import Monthly Payments</div>
+            <button class="close-btn" onclick="closeMonthlyModal()">✕</button>
+        </div>
+        <div class="modal-body" style="padding-bottom:8px;">
+
+            {{-- Step 1: Choose year/month and download template --}}
+            <div style="background:var(--surface);border-radius:var(--r-sm);padding:16px 18px;margin-bottom:18px;border:1px solid var(--border);">
+                <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--mid);margin-bottom:12px;">
+                    Step 1 — Download Template
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label class="form-label">Financial Year</label>
+                        <select id="tpl-year" class="form-control">
+                            @foreach($years as $yr)
+                            <option value="{{ $yr }}" {{ $yr == $selectedYear ? 'selected' : '' }}>{{ $yr }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label class="form-label">Month</label>
+                        <select id="tpl-month" class="form-control">
+                            @foreach(\App\Models\Payment::MONTHS as $n => $mn)
+                            <option value="{{ $n }}" {{ $n == date('n') ? 'selected' : '' }}>{{ $mn }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                </div>
+                <div style="margin-top:12px;">
+                    <button type="button" onclick="downloadTemplate()" class="btn btn-outline btn-sm" style="gap:6px;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        Download Template for Selected Month
+                    </button>
+                    <div class="text-sm text-mid" style="margin-top:6px;">
+                        Pre-filled with all members. Green cells = existing payment, amber = existing welfare.
+                    </div>
+                </div>
+            </div>
+
+            {{-- Step 2: Upload filled template --}}
+            <div style="background:var(--surface);border-radius:var(--r-sm);padding:16px 18px;border:1px solid var(--border);">
+                <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--mid);margin-bottom:12px;">
+                    Step 2 — Upload Completed Template
+                </div>
+                <form method="POST" action="{{ route('import.monthly.store') }}" enctype="multipart/form-data" id="monthly-import-form">
+                    @csrf
+                    <input type="hidden" name="year"  id="upload-year">
+                    <input type="hidden" name="month" id="upload-month">
+
+                    <div id="monthly-drop-zone"
+                         style="border:2px dashed var(--border);border-radius:var(--r-sm);padding:24px 16px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s;"
+                         onclick="document.getElementById('monthly-file-input').click()"
+                         ondragover="mHandleDragOver(event)" ondragleave="mHandleDragLeave(event)" ondrop="mHandleDrop(event)">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--sage)" stroke-width="1.5" style="margin:0 auto 8px;display:block;">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                        <div id="monthly-drop-label" style="font-size:.875rem;font-weight:500;color:var(--ink);margin-bottom:3px;">Drop filled template here</div>
+                        <div style="font-size:.78rem;color:var(--mid);">or click to browse</div>
+                        <input type="file" id="monthly-file-input" name="spreadsheet" accept=".xlsx,.xls" style="display:none" onchange="mHandleFileSelect(this)">
+                    </div>
+
+                    <div id="monthly-file-info" style="display:none;margin-top:10px;padding:9px 12px;background:var(--mist);border-radius:var(--r-sm);align-items:center;gap:10px;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--leaf)" stroke-width="2" style="flex-shrink:0;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        <span id="monthly-file-name" style="font-size:.855rem;font-weight:500;color:var(--forest);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+                        <button type="button" onclick="mClearFile()" style="background:none;border:none;color:var(--mid);cursor:pointer;font-size:13px;padding:0 2px;">✕</button>
+                    </div>
+
+                    <div style="margin-top:12px;padding:10px 12px;background:#fef3c7;border-radius:var(--r-sm);font-size:.78rem;color:#92400e;line-height:1.6;">
+                        <strong>Note:</strong> Members with an existing payment or welfare for the selected month will be skipped automatically — no overwriting.
+                    </div>
+
+                    <div class="modal-foot" style="padding:14px 0 0;border-top:none;">
+                        <button type="button" onclick="closeMonthlyModal()" class="btn btn-outline">Cancel</button>
+                        <button type="submit" id="monthly-import-btn" class="btn btn-primary" disabled>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                            Import Payments
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
 @push('scripts')
 <script>
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -440,6 +563,85 @@ function handleDrop(e) {
         handleDragLeave(e);
     }
 }
+
+// ── Monthly Import Modal ──────────────────────────────────────────────────
+function closeMonthlyModal() {
+    document.getElementById('monthlyImportModal').classList.remove('open');
+}
+document.getElementById('monthlyImportModal')?.addEventListener('click', function(e) {
+    if (e.target === this) closeMonthlyModal();
+});
+
+function downloadTemplate() {
+    const year  = document.getElementById('tpl-year').value;
+    const month = document.getElementById('tpl-month').value;
+    // Sync the hidden upload fields so the form knows which year/month was selected
+    document.getElementById('upload-year').value  = year;
+    document.getElementById('upload-month').value = month;
+    const url = '{{ route("import.monthly.template") }}?year=' + year + '&month=' + month;
+    window.location.href = url;
+}
+
+// Keep upload year/month in sync whenever selects change
+document.getElementById('tpl-year')?.addEventListener('change', function() {
+    document.getElementById('upload-year').value = this.value;
+});
+document.getElementById('tpl-month')?.addEventListener('change', function() {
+    document.getElementById('upload-month').value = this.value;
+});
+
+// Initialise hidden fields from the select defaults
+document.addEventListener('DOMContentLoaded', () => {
+    const y = document.getElementById('tpl-year');
+    const m = document.getElementById('tpl-month');
+    if (y) document.getElementById('upload-year').value  = y.value;
+    if (m) document.getElementById('upload-month').value = m.value;
+});
+
+function mHandleFileSelect(input) {
+    if (input.files.length) mShowFile(input.files[0]);
+}
+function mShowFile(file) {
+    document.getElementById('monthly-drop-label').textContent = 'File ready';
+    document.getElementById('monthly-drop-zone').style.borderColor = 'var(--sage)';
+    document.getElementById('monthly-drop-zone').style.background  = 'rgba(82,183,136,.04)';
+    document.getElementById('monthly-file-name').textContent = file.name;
+    document.getElementById('monthly-file-info').style.display = 'flex';
+    document.getElementById('monthly-import-btn').disabled = false;
+}
+function mClearFile() {
+    document.getElementById('monthly-file-input').value = '';
+    document.getElementById('monthly-drop-label').textContent = 'Drop filled template here';
+    document.getElementById('monthly-drop-zone').style.borderColor = 'var(--border)';
+    document.getElementById('monthly-drop-zone').style.background  = '';
+    document.getElementById('monthly-file-info').style.display = 'none';
+    document.getElementById('monthly-import-btn').disabled = true;
+}
+function mHandleDragOver(e) {
+    e.preventDefault();
+    document.getElementById('monthly-drop-zone').style.borderColor = 'var(--sage)';
+    document.getElementById('monthly-drop-zone').style.background  = 'rgba(82,183,136,.06)';
+}
+function mHandleDragLeave(e) {
+    document.getElementById('monthly-drop-zone').style.borderColor = 'var(--border)';
+    document.getElementById('monthly-drop-zone').style.background  = '';
+}
+function mHandleDrop(e) {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls'))) {
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        document.getElementById('monthly-file-input').files = dt.files;
+        mShowFile(file);
+    } else { mHandleDragLeave(e); }
+}
+
+document.getElementById('monthly-import-form')?.addEventListener('submit', function() {
+    const btn = document.getElementById('monthly-import-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="animation:spin .7s linear infinite"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Importing…';
+});
 
 // Show import modal automatically if there were validation errors on the file field
 @if($errors->has('spreadsheet'))

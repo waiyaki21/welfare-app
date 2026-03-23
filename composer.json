@@ -54,6 +54,14 @@
             "@php -r \"file_exists('database/database.sqlite') || touch('database/database.sqlite');\"",
             "@php artisan migrate --ansi"
         ],
+        "native:postBuild": [
+            "@php artisan optimize:clear",
+            "@php artisan optimize",
+            "@php artisan migrate:fresh",
+            "@php artisan db:seed --class=ExpenseCategorySeeder",
+            "@php artisan native:install --force --quiet --publish",
+            "@php artisan native:migrate:fresh --seed"
+        ],
         "native:dev": [
             "Composer\\Config::disableProcessTimeout",
             "npx concurrently -k -c \"#93c5fd,#c4b5fd\" \"php artisan native:run --no-interaction\" \"npm run dev\" --names=app,vite"
