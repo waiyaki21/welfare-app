@@ -1,7 +1,7 @@
 {
     "name": "athoni/welfare-app",
     "type": "project",
-    "description": "Athoni Welfare Association \u2014 Financial Ledger App",
+    "description": "Athoni Welfare Association Financial Ledger App",
     "keywords": [
         "laravel",
         "framework",
@@ -9,7 +9,7 @@
     ],
     "license": "MIT",
     "require": {
-        "php": "^8.2",
+        "php": "^8.3",
         "laravel/framework": "^11.0",
         "laravel/socialite": "^5.25",
         "laravel/tinker": "^2.9",
@@ -53,6 +53,10 @@
             "@php artisan key:generate --ansi",
             "@php -r \"file_exists('database/database.sqlite') || touch('database/database.sqlite');\"",
             "@php artisan migrate --ansi"
+        ],
+        "watch": [
+            "@php artisan optimize:clear",
+            "@php artisan native:serve"
         ],
         "native:postBuild": [
             "@php artisan optimize:clear",

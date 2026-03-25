@@ -4,6 +4,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\MemberController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\ExpenseController;
+use App\Http\Controllers\ExpenditureController;
 use App\Http\Controllers\ExpenseCategoryController;
 use App\Http\Controllers\ImportController;
 use App\Http\Controllers\FinancialYearController;
@@ -60,6 +61,15 @@ Route::middleware('auth')->group(function () {
     Route::put('/expenses/{expense}',      [ExpenseController::class, 'update'])->name('expenses.update');
     Route::delete('/expenses/{expense}',   [ExpenseController::class, 'destroy'])->name('expenses.destroy');
 
+    // Expenditures module
+    Route::get('/expenditures', [ExpenditureController::class, 'index'])->name('expenditures.index');
+    Route::get('/expenditures/create', [ExpenditureController::class, 'create'])->name('expenditures.create');
+    Route::post('/expenditures', [ExpenditureController::class, 'store'])->name('expenditures.store');
+    Route::get('/expenditures/{expenditure}', [ExpenditureController::class, 'show'])->name('expenditures.show');
+    Route::get('/expenditures/{expenditure}/edit', [ExpenditureController::class, 'edit'])->name('expenditures.edit');
+    Route::put('/expenditures/{expenditure}', [ExpenditureController::class, 'update'])->name('expenditures.update');
+    Route::delete('/expenditures/{expenditure}', [ExpenditureController::class, 'destroy'])->name('expenditures.destroy');
+
     // Expense Categories
     Route::get('/expense-categories',                    [ExpenseCategoryController::class, 'index'])->name('expense-categories.index');
     Route::post('/expense-categories',                   [ExpenseCategoryController::class, 'store'])->name('expense-categories.store');
@@ -81,8 +91,14 @@ Route::middleware('auth')->group(function () {
     // Import — full year
     Route::get('/import',  [ImportController::class, 'show'])->name('import.show');
     Route::post('/import', [ImportController::class, 'store'])->name('import.store');
+    Route::post('/imports/preview/year', [ImportController::class, 'previewYearImport'])->name('imports.preview.year');
+    Route::post('/imports/final/year',   [ImportController::class, 'finalYearImport'])->name('imports.final.year');
+    Route::post('/imports/year/preview', [ImportController::class, 'previewYearImport'])->name('imports.year.preview');
+    Route::post('/imports/year/final',   [ImportController::class, 'finalYearImport'])->name('imports.year.final');
 
     // Import — monthly payments/welfare
     Route::get('/import/monthly/template', [ImportController::class, 'monthlyTemplate'])->name('import.monthly.template');
     Route::post('/import/monthly',         [ImportController::class, 'storeMonthly'])->name('import.monthly.store');
+    Route::post('/imports/preview/month',  [ImportController::class, 'previewMonthImport'])->name('imports.preview.month');
+    Route::post('/imports/final/month',    [ImportController::class, 'finalMonthImport'])->name('imports.final.month');
 });

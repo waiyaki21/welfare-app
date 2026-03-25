@@ -10,7 +10,7 @@ class ExpenseCategorySeeder extends Seeder
     public function run(): void
     {
         $defaults = [
-            ['slug' => 'bank_charges',        'name' => 'Bank / MPESA Charges',          'color' => '#fee2e2'],
+            ['slug' => 'bank_charges',         'name' => 'Bank / MPESA Charges',          'color' => '#fee2e2'],
             ['slug' => 'secretary_fee',        'name' => 'Secretary / Secretarial Fee',   'color' => '#fef3c7'],
             ['slug' => 'audit',                'name' => 'Audit & Legal Fees',            'color' => '#dbeafe'],
             ['slug' => 'agm',                  'name' => 'AGM Expenses',                  'color' => '#fee2e2'],

@@ -4,16 +4,20 @@
 @section('content')
 <div style="max-width:600px;margin:0 auto;">
 
-@if(session('import_results'))
-@php $r = session('import_results'); @endphp
+@if(session('import_feedback') || session('import_results'))
+@php
+    $r = session('import_feedback', session('import_results'));
+    $summary = $r['summary'] ?? $r;
+@endphp
 <div class="alert alert-success mb-6">
     <strong>Import complete!</strong>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px;font-size:.85rem;">
-        <span>Sheets processed: <strong>{{ $r['sheets_processed'] }}</strong></span>
-        <span>Members created: <strong>{{ $r['members_created'] }}</strong></span>
-        <span>Members updated: <strong>{{ $r['members_updated'] }}</strong></span>
-        <span>Payments created: <strong>{{ $r['payments_created'] }}</strong></span>
-        <span>Expenses created: <strong>{{ $r['expenses_created'] }}</strong></span>
+        <span>Sheets processed: <strong>{{ $summary['sheets_processed'] ?? 0 }}</strong></span>
+        <span>Members created: <strong>{{ $summary['members_created'] ?? 0 }}</strong></span>
+        <span>Members updated: <strong>{{ $summary['members_updated'] ?? 0 }}</strong></span>
+        <span>Payments created: <strong>{{ $summary['payments_created'] ?? 0 }}</strong></span>
+        <span>Expenses created: <strong>{{ $summary['expenses_created'] ?? 0 }}</strong></span>
+        <span>Failed rows: <strong>{{ $summary['failed_rows'] ?? 0 }}</strong></span>
     </div>
     @if(!empty($r['errors']))
     <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--mint);">

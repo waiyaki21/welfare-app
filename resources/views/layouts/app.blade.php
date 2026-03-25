@@ -8,6 +8,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    @if (file_exists(public_path('hot')) || file_exists(public_path('build/manifest.json')))
+        @vite(['resources/css/app.css', 'resources/js/app.js'])
+    @endif
     @php
         $appName     = \App\Models\AppSetting::appName();
         $appSub      = \App\Models\AppSetting::appSubtitle();
@@ -24,11 +27,12 @@
         // 2. Find that specific FinancialYear and get the count of memberFinancials
         // We use withCount() so Laravel performs a "SELECT COUNT" rather than loading all rows
         $yearRecord = \App\Models\FinancialYear::where('year', $selectedYear)
-            ->withCount('memberFinancials')
+            ->withCount(['memberFinancials', 'expenditures'])
             ->first();
 
         // 3. Set the memCount (default to 0 if no record exists for that year)
         $memCount = $yearRecord ? $yearRecord->member_financials_count : 0;
+        $expCount = $yearRecord ? $yearRecord->expenditures_count : 0;
     @endphp
     <style>
         :root {
@@ -325,12 +329,34 @@
         /* ── Modal ────────────────────────────────────────────── */
         .modal-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;align-items:center;justify-content:center;}
         .modal-backdrop.open{display:flex;}
-        .modal{background:var(--white);border-radius:var(--r);width:100%;max-width:520px;box-shadow:0 20px 60px rgba(0,0,0,.2);margin:20px;}
+        .modal{
+            background:var(--white);
+            border-radius:var(--r);
+            width:100%;
+            max-width:520px;
+            max-height:calc(100vh - 40px);
+            box-shadow:0 20px 60px rgba(0,0,0,.2);
+            margin:20px;
+            display:flex;
+            flex-direction:column;
+            overflow:hidden;
+        }
         .modal-head{padding:18px 22px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
         .modal-title{font-family:'DM Serif Display',serif;font-size:1rem;color:var(--forest);}
         .close-btn{background:none;border:none;font-size:1.1rem;color:var(--mid);cursor:pointer;padding:2px 6px;border-radius:4px;}
         .close-btn:hover{background:var(--surface);}
-        .modal-body{padding:20px 22px;}
+        .modal-body{
+            padding:20px 22px;
+            overflow-y:auto;
+            scrollbar-width:thin;
+            scrollbar-color:rgba(28,28,30,.28) transparent;
+        }
+        .modal-body::-webkit-scrollbar{width:6px;height:6px;}
+        .modal-body::-webkit-scrollbar-thumb{
+            background:rgba(28,28,30,.24);
+            border-radius:999px;
+        }
+        .modal-body::-webkit-scrollbar-track{background:transparent;}
         .modal-foot{padding:14px 22px;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end;}
 
         /* ── Empty state ──────────────────────────────────────── */
@@ -393,6 +419,18 @@
            data-label="Expenses">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
             <span class="sb-item-label">Expenses</span>
+        </a>
+
+        <a href="{{ route('expenditures.index', ['year' => $selectedYear]) }}"
+           class="sb-item {{ request()->routeIs('expenditures.*') ? 'active' : '' }}"
+           data-label="Expenditures">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h10"/></svg>
+            <span class="sb-item-label">Expenditures</span>
+            @if($expCount > 100)
+                <span class="sb-dot" title="{{ $expCount }} expenditures"></span>
+            @elseif($expCount > 0)
+                <span class="sb-badge">{{ $expCount }}</span>
+            @endif
         </a>
 
         <div class="sb-section">Tools</div>

@@ -4,10 +4,8 @@ namespace App\Providers;
 
 use App\Models\ExpenseCategory;
 use Native\Desktop\Contracts\ProvidesPhpIni;
-// use Native\Desktop\Facades\Menu;
-// use Native\Desktop\Facades\MenuBar;
+use Native\Desktop\Facades\Notification;
 use Native\Desktop\Facades\Window;
-use Native\Desktop\Notification;
 
 class NativeAppServiceProvider implements ProvidesPhpIni
 {
@@ -17,18 +15,6 @@ class NativeAppServiceProvider implements ProvidesPhpIni
      */
     public function boot(): void
     {
-        // 1. Setup the MenuBar / System Tray
-        // MenuBar::create()
-        //     ->icon(public_path('IconTemplate.png')) // Use your 22x22px icon
-        //     ->withContextMenu(
-        //         Menu::new()
-        //             ->label('My App v1.0')
-        //             ->separator()
-        //             ->link('https://your-site.com', 'Visit Website')
-        //             ->separator()
-        //             ->quit()
-        //     );
-
         Window::open()
             ->width(1920)
             ->height(1080)
@@ -55,9 +41,6 @@ class NativeAppServiceProvider implements ProvidesPhpIni
      */
     public function phpIni(): array
     {
-        return [
-            'memory_limit' => '512M',
-            'max_execution_time' => '0',
-        ];
+        return [];
     }
 }

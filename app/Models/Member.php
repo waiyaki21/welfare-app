@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Support\Str;
 
 class Member extends Model
 {
@@ -12,6 +13,20 @@ class Member extends Model
     protected $fillable = ['name', 'phone', 'joined_year', 'is_active', 'notes'];
 
     protected $casts = ['is_active' => 'boolean'];
+
+    public function setNameAttribute($value): void
+    {
+        $normalized = trim((string) preg_replace('/\s+/', ' ', (string) $value));
+        $this->attributes['name'] = $normalized !== ''
+            ? Str::of($normalized)->lower()->title()->toString()
+            : $normalized;
+    }
+
+    public function setPhoneAttribute($value): void
+    {
+        $phone = preg_replace('/[^0-9+]/', '', (string) $value);
+        $this->attributes['phone'] = strlen($phone) >= 9 ? $phone : null;
+    }
 
     // ── Relationships ────────────────────────────────────────────────────────
 

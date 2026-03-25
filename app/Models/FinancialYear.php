@@ -32,6 +32,11 @@ class FinancialYear extends Model
         return $this->hasMany(WelfareEvent::class);
     }
 
+    public function expenditures()
+    {
+        return $this->hasMany(Expenditure::class);
+    }
+
     public function bankBalances()
     {
         return $this->hasMany(BankBalance::class)->orderBy('month');

@@ -1,0 +1,15 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    :root {
+        color-scheme: light dark;
+    }
+}
+
+@layer components {
+    .flowbite-surface {
+        @apply rounded-2xl border border-white/30 bg-slate-50/80 shadow-sm backdrop-blur-md;
+    }
+}

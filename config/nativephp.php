@@ -15,7 +15,7 @@ return [
      */
     'app_id' => env('NATIVEPHP_APP_ID', 'com.athoni.welfare'),
 
-    /** 
+    /**
      * If your application allows deep linking, you can specify the scheme
      * to use here. This is the scheme that will be used to open your
      * application from within other applications.
@@ -29,7 +29,7 @@ return [
     /**
      * The author of your application.
      */
-    'author' => env('NATIVEPHP_APP_AUTHOR', 'Waiyaki Wanjohi'),
+    'author' => env('NATIVEPHP_APP_AUTHOR', 'waiyaki21'),
 
     /**
      * The copyright notice for your application.
@@ -164,15 +164,11 @@ return [
      * Define your own scripts to run before and after the build process.
      */
     'prebuild' => [
-        'php artisan native:migrate:fresh',
-        'php artisan optimize',
-        'php artisan view:cache',
-        'php artisan route:cache',
-        'php artisan config:cache',
+        // 'npm run build',
     ],
 
     'postbuild' => [
-        // 'npm run release', // Run a command after the build
+        // 'rm -rf public/build',
     ],
 
     /**

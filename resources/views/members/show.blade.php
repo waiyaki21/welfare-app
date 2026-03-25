@@ -3,6 +3,10 @@
 
 @section('topbar-actions')
 <a href="{{ route('members.edit', $member) }}" class="btn btn-outline btn-sm">Edit</a>
+<form method="POST" action="{{ route('members.destroy', $member) }}" onsubmit="return confirm('Delete this member permanently?')">
+    @csrf @method('DELETE')
+    <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+</form>
 <a href="{{ route('members.index') }}" class="btn btn-ghost btn-sm">← Members</a>
 @endsection
 

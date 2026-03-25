@@ -2,268 +2,457 @@
 
 namespace App\Services;
 
-use App\Models\Member;
 use App\Models\FinancialYear;
+use App\Models\Member;
 use App\Models\Payment;
 use App\Models\WelfareEvent;
-use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 use PhpOffice\PhpSpreadsheet\Reader\Xlsx as XlsxReader;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class MonthlyImportService
 {
-    // ── Template export ───────────────────────────────────────────────────────
+    public function exportTemplate(int $year, int $month): string
+    {
+        $financialYear = FinancialYear::where('year', $year)->first();
+        $members = Member::orderBy('name')->get();
 
-	/**
-	 * Generate a template xlsx for a given year/month with all active members listed.
-	 * Returns the path to the temp file.
-	 */
-	public function exportTemplate(int $year, int $month): string
-	{
-		$fy      = FinancialYear::where('year', $year)->first();
-		$members = Member::orderBy('name')->get();
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $monthName = Payment::MONTHS[$month] ?? "Month {$month}";
+        $sheet->setTitle('Monthly Import');
 
-		$spreadsheet = new Spreadsheet();
-		$sheet       = $spreadsheet->getActiveSheet();
-		$monthName   = Payment::MONTHS[$month] ?? "Month $month";
-		$sheet->setTitle("Monthly Import");
+        $sheet->setCellValue('A1', 'Athoni Welfare - Monthly Payments Import');
+        $sheet->mergeCells('A1:E1');
+        $sheet->getStyle('A1')->applyFromArray([
+            'font' => ['bold' => true, 'size' => 13, 'color' => ['argb' => 'FF1A3A2A']],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+        ]);
 
-		// ── Header info rows ─────────────────────────────────────────────────
-		$sheet->setCellValue('A1', "Athoni Welfare — Monthly Payments Import");
-		$sheet->mergeCells('A1:D1');
-		$sheet->getStyle('A1')->applyFromArray([
-			'font'      => ['bold' => true, 'size' => 13, 'color' => ['argb' => 'FF1A3A2A']],
-			'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
-		]);
+        $sheet->setCellValue('A2', "Year: {$year}   |   Month: {$monthName}");
+        $sheet->mergeCells('A2:E2');
+        $sheet->getStyle('A2')->applyFromArray([
+            'font' => ['italic' => true, 'size' => 10, 'color' => ['argb' => 'FF52b788']],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+        ]);
 
-		$sheet->setCellValue('A2', "Year: {$year}   |   Month: {$monthName}");
-		$sheet->mergeCells('A2:D2');
-		$sheet->getStyle('A2')->applyFromArray([
-			'font'      => ['italic' => true, 'size' => 10, 'color' => ['argb' => 'FF52b788']],
-			'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
-		]);
+        $sheet->setCellValue('A3', 'Instructions: Fill Payment/Welfare. Keep Member Name and Telephone unchanged.');
+        $sheet->mergeCells('A3:E3');
+        $sheet->getStyle('A3')->applyFromArray([
+            'font' => ['italic' => true, 'size' => 9, 'color' => ['argb' => 'FF6b7280']],
+        ]);
 
-		$sheet->setCellValue('A3', "Instructions: Fill in Payment and/or Welfare amounts. Leave blank to skip. Do NOT change member names or the year/month rows.");
-		$sheet->mergeCells('A3:D3');
-		$sheet->getStyle('A3')->applyFromArray([
-			'font'  => ['italic' => true, 'size' => 9, 'color' => ['argb' => 'FF6b7280']],
-		]);
+        $sheet->setCellValue('A4', '__META__');
+        $sheet->setCellValue('B4', $year);
+        $sheet->setCellValue('C4', $month);
+        $sheet->getRowDimension(4)->setVisible(false);
 
-		// Hidden meta row for the importer to read year/month reliably
-		$sheet->setCellValue('A4', '__META__');
-		$sheet->setCellValue('B4', $year);
-		$sheet->setCellValue('C4', $month);
-		$sheet->getRowDimension(4)->setVisible(false);
+        $headers = [
+            'A5' => 'Member Name',
+            'B5' => 'Telephone',
+            'C5' => 'Payment (KES)',
+            'D5' => 'Welfare (KES)',
+            'E5' => 'Notes',
+        ];
+        foreach ($headers as $cell => $label) {
+            $sheet->setCellValue($cell, $label);
+        }
+        $sheet->getStyle('A5:E5')->applyFromArray([
+            'font' => ['bold' => true, 'color' => ['argb' => 'FFD8F3DC'], 'size' => 10],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['argb' => 'FF1A3A2A']],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN]],
+        ]);
 
-		// ── Column headers ───────────────────────────────────────────────────
-		$headers = ['A5' => 'Member Name', 'B5' => 'Payment (KES)', 'C5' => 'Welfare (KES)', 'D5' => 'Notes'];
-		foreach ($headers as $cell => $label) {
-			$sheet->setCellValue($cell, $label);
-		}
-		$sheet->getStyle('A5:D5')->applyFromArray([
-			'font'      => ['bold' => true, 'color' => ['argb' => 'FFD8F3DC'], 'size' => 10],
-			'fill'      => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['argb' => 'FF1A3A2A']],
-			'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
-			'borders'   => ['allBorders' => ['borderStyle' => Border::BORDER_THIN]],
-		]);
+        $row = 6;
+        foreach ($members as $member) {
+            $existingPayment = 0.0;
+            $existingWelfare = 0.0;
+            if ($financialYear) {
+                $existingPayment = (float) Payment::where('member_id', $member->id)
+                    ->where('financial_year_id', $financialYear->id)
+                    ->where('month', $month)
+                    ->sum('amount');
 
-		// ── Member rows ──────────────────────────────────────────────────────
-		$row = 6;
-		foreach ($members as $member) {
-			// Pre-fill existing payment for this month if it exists
-			$existingPayment = null;
-			$existingWelfare = null;
+                $existingWelfare = (float) WelfareEvent::where('member_id', $member->id)
+                    ->where('financial_year_id', $financialYear->id)
+                    ->whereMonth('event_date', $month)
+                    ->sum('amount');
+            }
 
-			if ($fy) {
-				$existingPayment = Payment::where('member_id', $member->id)
-					->where('financial_year_id', $fy->id)
-					->where('month', $month)
-					->sum('amount');
+            $sheet->setCellValue("A{$row}", $member->name);
+            $sheet->setCellValue("B{$row}", $member->phone);
 
-				$existingWelfare = WelfareEvent::where('member_id', $member->id)
-					->where('financial_year_id', $fy->id)
-					->whereMonth('event_date', $month)
-					->sum('amount');
-			}
+            if ($existingPayment > 0) {
+                $sheet->setCellValue("C{$row}", $existingPayment);
+                $sheet->getStyle("C{$row}")->getFill()
+                    ->setFillType(Fill::FILL_SOLID)
+                    ->getStartColor()->setARGB('FFD8F3DC');
+            }
 
-			$sheet->setCellValue("A{$row}", $member->name);
-			if ($existingPayment > 0) {
-				$sheet->setCellValue("B{$row}", $existingPayment);
-				// Light tint to show it's pre-filled
-				$sheet->getStyle("B{$row}")->getFill()
-					->setFillType(Fill::FILL_SOLID)
-					->getStartColor()->setARGB('FFD8F3DC');
-			}
-			if ($existingWelfare > 0) {
-				$sheet->setCellValue("C{$row}", $existingWelfare);
-				$sheet->getStyle("C{$row}")->getFill()
-					->setFillType(Fill::FILL_SOLID)
-					->getStartColor()->setARGB('FFFEF3C7');
-			}
+            if ($existingWelfare > 0) {
+                $sheet->setCellValue("D{$row}", $existingWelfare);
+                $sheet->getStyle("D{$row}")->getFill()
+                    ->setFillType(Fill::FILL_SOLID)
+                    ->getStartColor()->setARGB('FFFEF3C7');
+            }
 
-			// Alternate row tint
-			if ($row % 2 === 0) {
-				$sheet->getStyle("A{$row}:D{$row}")->getFill()
-					->setFillType(Fill::FILL_SOLID)
-					->getStartColor()->setARGB('FFF9FAFB');
-			}
+            if ($row % 2 === 0) {
+                $sheet->getStyle("A{$row}:E{$row}")->getFill()
+                    ->setFillType(Fill::FILL_SOLID)
+                    ->getStartColor()->setARGB('FFF9FAFB');
+            }
 
-			$sheet->getStyle("A{$row}:D{$row}")->getBorders()
-				->getAllBorders()->setBorderStyle(Border::BORDER_THIN)
-				->getColor()->setARGB('FFE5E7EB');
+            $sheet->getStyle("A{$row}:E{$row}")->getBorders()
+                ->getAllBorders()->setBorderStyle(Border::BORDER_THIN)
+                ->getColor()->setARGB('FFE5E7EB');
 
-			$row++;
-		}
+            $row++;
+        }
 
-		// ── Column widths ────────────────────────────────────────────────────
-		$sheet->getColumnDimension('A')->setWidth(32);
-		$sheet->getColumnDimension('B')->setWidth(16);
-		$sheet->getColumnDimension('C')->setWidth(16);
-		$sheet->getColumnDimension('D')->setWidth(28);
+        $sheet->getColumnDimension('A')->setWidth(28);
+        $sheet->getColumnDimension('B')->setWidth(18);
+        $sheet->getColumnDimension('C')->setWidth(16);
+        $sheet->getColumnDimension('D')->setWidth(16);
+        $sheet->getColumnDimension('E')->setWidth(28);
+        $sheet->freezePane('A6');
 
-		$sheet->freezePane('A6');
+        $path = storage_path("app/exports/monthly_template_{$year}_{$month}.xlsx");
+        @mkdir(dirname($path), 0755, true);
+        (new Xlsx($spreadsheet))->save($path);
 
-		// ── Save ─────────────────────────────────────────────────────────────
-		$path = storage_path("app/exports/monthly_template_{$year}_{$month}.xlsx");
-		@mkdir(dirname($path), 0755, true);
+        return $path;
+    }
 
-		(new Xlsx($spreadsheet))->save($path);
-		return $path;
-	}
+    public function preview(string $filePath, int $year, int $month): array
+    {
+        return $this->runMonthlyImport($filePath, $year, $month, false);
+    }
 
-    // ── Monthly import ────────────────────────────────────────────────────────
+    public function import(string $filePath, int $year, int $month): array
+    {
+        return $this->runMonthlyImport($filePath, $year, $month, true);
+    }
 
-	/**
-	 * Import a filled-in monthly template.
-	 *
-	 * Rules (as specified):
-	 *  - If a member already has a payment for that month → skip (keep existing)
-	 *  - If new payment value provided and no existing → create it
-	 *  - Same for welfare events
-	 *
-	 * Returns results array.
-	 */
-	public function import(string $filePath, int $year, int $month): array
-	{
-		$results = [
-			'year'              => $year,
-			'month'             => Payment::MONTHS[$month] ?? $month,
-			'payments_created'  => 0,
-			'payments_skipped'  => 0,
-			'welfare_created'   => 0,
-			'welfare_skipped'   => 0,
-			'members_not_found' => [],
-			'errors'            => [],
-		];
+    private function runMonthlyImport(string $filePath, int $year, int $month, bool $persist): array
+    {
+        $results = [
+            'status' => 'success',
+            'mode' => $persist ? 'final' : 'preview',
+            'summary' => [
+                'members_created' => 0,
+                'members_updated' => 0,
+                'payments_created' => 0,
+                'expenses_created' => 0,
+                'failed_rows' => 0,
+                'welfare_created' => 0,
+                'welfare_skipped' => 0,
+                'payments_skipped' => 0,
+            ],
+            'membersInfo' => [
+                'existing_members' => [],
+                'new_members' => [],
+                'all_members' => [],
+                'error_members' => [],
+                'existing_count' => 0,
+                'new_count' => 0,
+                'total_count' => 0,
+            ],
+            'paymentsInfo' => [
+                'records_count' => 0,
+                'total_amount' => 0.0,
+            ],
+            'expensesInfo' => [
+                'records_count' => 0,
+                'total_amount' => 0.0,
+            ],
+            'year' => $year,
+            'month' => Payment::MONTHS[$month] ?? $month,
+            'errors' => [],
+        ];
 
-		$fy = FinancialYear::where('year', $year)->first();
-		if (!$fy) {
-			$results['errors'][] = "Financial year {$year} not found. Please create it first by importing the full year spreadsheet.";
-			return $results;
-		}
+        $financialYear = FinancialYear::where('year', $year)->first();
+        if (!$financialYear) {
+            $results['status'] = 'error';
+            $results['errors'][] = "Financial year {$year} not found. Import yearly sheet first.";
+            return $results;
+        }
 
-		$reader      = new XlsxReader();
-		$spreadsheet = $reader->load($filePath);
-		$sheet       = $spreadsheet->getActiveSheet();
-		$highestRow  = $sheet->getHighestRow();
+        $parsedRows = $this->parseMonthlyRows($filePath, $results);
+        if ($persist) {
+            DB::transaction(function () use (&$results, $parsedRows, $financialYear, $year, $month): void {
+                foreach ($parsedRows as $row) {
+                    if (!empty($row['errors']) || !$row['matched_member_id']) {
+                        $results['summary']['failed_rows']++;
+                        continue;
+                    }
 
-		// Detect data start row — look for the __META__ marker or the header row
-		$dataStartRow = 6; // default based on template structure
-		for ($r = 1; $r <= min(10, $highestRow); $r++) {
-			if (trim((string) $sheet->getCell("A{$r}")->getValue()) === '__META__') {
-				// Read year/month from hidden meta row if present (ignore passed values if template has them)
-				$dataStartRow = $r + 2; // skip meta + header
-				break;
-			}
-		}
+                    if ($row['payment_amount'] > 0) {
+                        $existingPayment = Payment::where('member_id', $row['matched_member_id'])
+                            ->where('financial_year_id', $financialYear->id)
+                            ->where('month', $month)
+                            ->exists();
 
-		// Build member lookup: normalized name → Member
-		$members = Member::all()->keyBy(fn($m) => $this->normalizeName($m->name));
+                        if ($existingPayment) {
+                            $results['summary']['payments_skipped']++;
+                        } else {
+                            Payment::create([
+                                'member_id' => $row['matched_member_id'],
+                                'financial_year_id' => $financialYear->id,
+                                'month' => $month,
+                                'amount' => $row['payment_amount'],
+                                'payment_type' => 'contribution',
+                                'notes' => $row['notes'] ?: null,
+                            ]);
+                            $results['summary']['payments_created']++;
+                        }
+                    }
 
-		for ($r = $dataStartRow; $r <= $highestRow; $r++) {
-			$rawName = trim((string) $sheet->getCell("A{$r}")->getValue());
-			if (empty($rawName)) continue;
+                    if ($row['welfare_amount'] > 0) {
+                        $existingWelfare = WelfareEvent::where('member_id', $row['matched_member_id'])
+                            ->where('financial_year_id', $financialYear->id)
+                            ->whereYear('event_date', $year)
+                            ->whereMonth('event_date', $month)
+                            ->exists();
 
-			$paymentAmt = $this->toFloat($sheet->getCell("B{$r}")->getValue());
-			$welfareAmt = $this->toFloat($sheet->getCell("C{$r}")->getValue());
-			$notes      = trim((string) $sheet->getCell("D{$r}")->getValue());
+                        if ($existingWelfare) {
+                            $results['summary']['welfare_skipped']++;
+                        } else {
+                            WelfareEvent::create([
+                                'member_id' => $row['matched_member_id'],
+                                'financial_year_id' => $financialYear->id,
+                                'amount' => $row['welfare_amount'],
+                                'reason' => 'general',
+                                'event_date' => Carbon::create($year, $month, 1)->endOfMonth()->toDateString(),
+                                'notes' => $row['notes'] ?: null,
+                            ]);
+                            $results['summary']['welfare_created']++;
+                        }
+                    }
+                }
+            });
+        }
 
-			// Skip completely empty data rows
-			if ($paymentAmt <= 0 && $welfareAmt <= 0) continue;
+        $results['membersInfo']['existing_count'] = count($results['membersInfo']['existing_members']);
+        $results['membersInfo']['new_count'] = count($results['membersInfo']['new_members']);
+        $results['membersInfo']['total_count'] = count($results['membersInfo']['all_members']);
 
-			// Find member
-			$member = $members->get($this->normalizeName($rawName));
-			if (!$member) {
-				$results['members_not_found'][] = $rawName;
-				$results['errors'][] = "Row {$r}: Member \"{$rawName}\" not found — skipped.";
-				continue;
-			}
+        if (!empty($results['errors']) || !empty($results['membersInfo']['error_members'])) {
+            $results['status'] = 'warning';
+        }
 
-			// ── Payment ──────────────────────────────────────────────────────
-			if ($paymentAmt > 0) {
-				$existingPayment = Payment::where('member_id', $member->id)
-					->where('financial_year_id', $fy->id)
-					->where('month', $month)
-					->exists();
+        return $results;
+    }
 
-				if ($existingPayment) {
-					$results['payments_skipped']++;
-				} else {
-					Payment::create([
-						'member_id'         => $member->id,
-						'financial_year_id' => $fy->id,
-						'month'             => $month,
-						'amount'            => $paymentAmt,
-						'payment_type'      => 'contribution',
-						'notes'             => $notes ?: null,
-					]);
-					$results['payments_created']++;
-				}
-			}
+    private function parseMonthlyRows(string $filePath, array &$results): array
+    {
+        $reader = new XlsxReader();
+        $spreadsheet = $reader->load($filePath);
+        $sheet = $spreadsheet->getActiveSheet();
+        $highestRow = $sheet->getHighestRow();
 
-			// ── Welfare event ─────────────────────────────────────────────────
-			if ($welfareAmt > 0) {
-				// Check if a welfare event already exists for this member in this month
-				$existingWelfare = WelfareEvent::where('member_id', $member->id)
-					->where('financial_year_id', $fy->id)
-					->whereYear('event_date', $year)
-					->whereMonth('event_date', $month)
-					->exists();
+        $headerRow = 5;
+        $dataStartRow = 6;
+        for ($r = 1; $r <= min(12, $highestRow); $r++) {
+            if (trim((string) $sheet->getCell("A{$r}")->getValue()) === '__META__') {
+                $headerRow = $r + 1;
+                $dataStartRow = $r + 2;
+                break;
+            }
+        }
 
-				if ($existingWelfare) {
-					$results['welfare_skipped']++;
-				} else {
-					WelfareEvent::create([
-						'member_id'         => $member->id,
-						'financial_year_id' => $fy->id,
-						'amount'            => $welfareAmt,
-						'reason'            => 'general',
-						'event_date'        => \Carbon\Carbon::create($year, $month, 1)->endOfMonth()->toDateString(),
-						'notes'             => $notes ?: null,
-					]);
-					$results['welfare_created']++;
-				}
-			}
-		}
+        $colMap = $this->detectMonthlyColumns($sheet, $headerRow);
+        if (!isset($colMap['name']) || !isset($colMap['payment']) || !isset($colMap['welfare'])) {
+            $results['errors'][] = 'Invalid monthly template format. Required columns are missing.';
+            return [];
+        }
 
-		return $results;
-	}
+        $allMembers = Member::select('id', 'name', 'phone')->get();
+        $memberByNamePhone = [];
+        $memberByName = [];
+        $dbPhoneCounts = [];
+        foreach ($allMembers as $member) {
+            $nameKey = $this->normalizeName($member->name);
+            $phoneKey = $this->cleanPhone($member->phone) ?? '';
+            $memberByNamePhone["{$nameKey}|{$phoneKey}"] = $member;
+            $memberByName[$nameKey][] = $member;
+            if ($phoneKey !== '') {
+                $dbPhoneCounts[$phoneKey] = ($dbPhoneCounts[$phoneKey] ?? 0) + 1;
+            }
+        }
 
-	// ── Helpers ───────────────────────────────────────────────────────────────
+        $sheetNameCounts = [];
+        $sheetPhoneCounts = [];
+        for ($r = $dataStartRow; $r <= $highestRow; $r++) {
+            $name = trim((string) $sheet->getCell($colMap['name'] . $r)->getValue());
+            if ($name === '') {
+                continue;
+            }
+            $paymentAmount = $this->toFloat($sheet->getCell($colMap['payment'] . $r)->getValue());
+            $welfareAmount = $this->toFloat($sheet->getCell($colMap['welfare'] . $r)->getValue());
+            if ($paymentAmount <= 0 && $welfareAmount <= 0) {
+                continue;
+            }
 
-	private function normalizeName(string $name): string
-	{
-		return strtolower(trim(preg_replace('/\s+/', ' ', $name)));
-	}
+            $nameKey = $this->normalizeName($name);
+            $sheetNameCounts[$nameKey] = ($sheetNameCounts[$nameKey] ?? 0) + 1;
 
-	private function toFloat(mixed $val): float
-	{
-		if ($val === null || $val === '') return 0.0;
-		$str = strtolower(trim((string) $val));
-		if (in_array($str, ['nan', 'none', '-', '—'])) return 0.0;
-		return (float) str_replace([',', ' '], '', $str);
-	}
+            if ($colMap['phone']) {
+                $phone = $this->cleanPhone((string) $sheet->getCell($colMap['phone'] . $r)->getValue());
+                if ($phone) {
+                    $sheetPhoneCounts[$phone] = ($sheetPhoneCounts[$phone] ?? 0) + 1;
+                }
+            }
+        }
+
+        $parsedRows = [];
+        for ($r = $dataStartRow; $r <= $highestRow; $r++) {
+            $name = trim((string) $sheet->getCell($colMap['name'] . $r)->getValue());
+            if ($name === '') {
+                continue;
+            }
+
+            $phoneRaw = $colMap['phone'] ? (string) $sheet->getCell($colMap['phone'] . $r)->getValue() : '';
+            $phone = $this->cleanPhone($phoneRaw);
+            $paymentAmount = $this->toFloat($sheet->getCell($colMap['payment'] . $r)->getValue());
+            $welfareAmount = $this->toFloat($sheet->getCell($colMap['welfare'] . $r)->getValue());
+            $notes = $colMap['notes'] ? trim((string) $sheet->getCell($colMap['notes'] . $r)->getValue()) : '';
+
+            if ($paymentAmount <= 0 && $welfareAmount <= 0) {
+                continue;
+            }
+
+            $errors = [];
+            $nameKey = $this->normalizeName($name);
+            $member = null;
+
+            if (($sheetNameCounts[$nameKey] ?? 0) > 1) {
+                $errors[] = 'Duplicate member name in monthly sheet';
+            }
+
+            if ($phone && ($sheetPhoneCounts[$phone] ?? 0) > 1) {
+                $errors[] = 'Duplicate phone in monthly sheet';
+            }
+
+            if ($phone && ($dbPhoneCounts[$phone] ?? 0) > 1) {
+                $errors[] = 'Phone is duplicated in DB';
+            }
+
+            if ($phone) {
+                $member = $memberByNamePhone["{$nameKey}|{$phone}"] ?? null;
+                if (!$member) {
+                    $errors[] = 'No existing member matched by name + telephone';
+                }
+            } else {
+                // Backward compatibility for old templates with no phone column.
+                $nameMatches = $memberByName[$nameKey] ?? [];
+                if (count($nameMatches) === 1) {
+                    $member = $nameMatches[0];
+                } elseif (count($nameMatches) > 1) {
+                    $errors[] = 'Name is ambiguous in DB. Use template with telephone column.';
+                } else {
+                    $errors[] = 'Member not found';
+                }
+            }
+
+            $status = $member ? 'existing' : 'new';
+            $memberInfo = [
+                'row' => $r,
+                'name' => $name,
+                'phone' => $phone,
+                'status' => $status,
+            ];
+
+            $results['membersInfo']['all_members'][] = $memberInfo;
+            if ($status === 'existing') {
+                $results['membersInfo']['existing_members'][] = $memberInfo;
+            } else {
+                $results['membersInfo']['new_members'][] = $memberInfo;
+            }
+
+            if (!empty($errors)) {
+                $results['membersInfo']['error_members'][] = $memberInfo + ['errors' => $errors];
+                foreach ($errors as $error) {
+                    $results['errors'][] = "Row {$r}: {$error}";
+                }
+            }
+
+            $results['paymentsInfo']['records_count'] += ($paymentAmount > 0 ? 1 : 0);
+            $results['paymentsInfo']['total_amount'] += $paymentAmount;
+
+            $parsedRows[] = [
+                'row' => $r,
+                'name' => $name,
+                'phone' => $phone,
+                'matched_member_id' => $member?->id,
+                'status' => $status,
+                'errors' => $errors,
+                'payment_amount' => $paymentAmount,
+                'welfare_amount' => $welfareAmount,
+                'notes' => $notes,
+            ];
+        }
+
+        return $parsedRows;
+    }
+
+    private function detectMonthlyColumns($sheet, int $headerRow): array
+    {
+        $highestCol = $sheet->getHighestColumn();
+        $highestIdx = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($highestCol);
+
+        $colMap = [
+            'name' => null,
+            'phone' => null,
+            'payment' => null,
+            'welfare' => null,
+            'notes' => null,
+        ];
+
+        for ($i = 1; $i <= $highestIdx; $i++) {
+            $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($i);
+            $label = strtoupper(trim((string) $sheet->getCell($col . $headerRow)->getValue()));
+            if (str_contains($label, 'MEMBER NAME')) {
+                $colMap['name'] = $col;
+            } elseif (str_contains($label, 'TELEPHONE') || str_contains($label, 'PHONE')) {
+                $colMap['phone'] = $col;
+            } elseif (str_contains($label, 'PAYMENT')) {
+                $colMap['payment'] = $col;
+            } elseif (str_contains($label, 'WELFARE')) {
+                $colMap['welfare'] = $col;
+            } elseif (str_contains($label, 'NOTES')) {
+                $colMap['notes'] = $col;
+            }
+        }
+
+        return $colMap;
+    }
+
+    private function normalizeName(string $name): string
+    {
+        return strtolower(trim((string) preg_replace('/\s+/', ' ', $name)));
+    }
+
+    private function cleanPhone(?string $value): ?string
+    {
+        $phone = preg_replace('/[^0-9+]/', '', (string) $value);
+        return strlen($phone) >= 9 ? $phone : null;
+    }
+
+    private function toFloat(mixed $value): float
+    {
+        if ($value === null || $value === '') {
+            return 0.0;
+        }
+        $string = strtolower(trim((string) $value));
+        if (in_array($string, ['nan', 'none', '-', '—'], true)) {
+            return 0.0;
+        }
+        return (float) str_replace([',', ' '], '', $string);
+    }
 }

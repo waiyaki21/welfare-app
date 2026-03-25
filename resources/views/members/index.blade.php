@@ -203,8 +203,11 @@ th.sortable.desc .sort-icon .arr-down { opacity: 1; }
                     @endif
                     <td>
                         <div class="flex items-center gap-1">
-                            <a href="{{ route('members.show', $member->id) }}" class="btn btn-ghost btn-xs">View</a>
                             <a href="{{ route('members.edit', $member) }}" class="btn btn-ghost btn-xs">Edit</a>
+                            <form method="POST" action="{{ route('members.destroy', $member) }}" onsubmit="return confirm('Delete this member permanently?')">
+                                @csrf @method('DELETE')
+                                <button type="submit" class="btn btn-ghost btn-xs" style="color:var(--rust)">Del</button>
+                            </form>
                         </div>
                     </td>
                 </tr>
