@@ -95,6 +95,8 @@ Route::middleware('auth')->group(function () {
     Route::post('/imports/final/year',   [ImportController::class, 'finalYearImport'])->name('imports.final.year');
     Route::post('/imports/year/preview', [ImportController::class, 'previewYearImport'])->name('imports.year.preview');
     Route::post('/imports/year/final',   [ImportController::class, 'finalYearImport'])->name('imports.year.final');
+    Route::post('/imports/expenditures/preview', [ImportController::class, 'previewExpenditureImport'])->name('imports.expenditures.preview');
+    Route::post('/imports/expenditures/final',   [ImportController::class, 'finalExpenditureImport'])->name('imports.expenditures.final');
 
     // Import — monthly payments/welfare
     Route::get('/import/monthly/template', [ImportController::class, 'monthlyTemplate'])->name('import.monthly.template');

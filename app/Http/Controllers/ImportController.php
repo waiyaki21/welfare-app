@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Payment;
+use App\Services\ExpenditureImportService;
 use App\Services\MonthlyImportService;
 use App\Services\SpreadsheetImportService;
 use Illuminate\Http\Request;
@@ -11,7 +12,8 @@ class ImportController extends Controller
 {
     public function __construct(
         private SpreadsheetImportService $importer,
-        private MonthlyImportService     $monthlyImporter
+        private MonthlyImportService     $monthlyImporter,
+        private ExpenditureImportService $expenditureImporter
     ) {}
 
     // ── Full-year import ──────────────────────────────────────────────────────
@@ -178,6 +180,69 @@ class ImportController extends Controller
 
             return redirect()->route('dashboard')
                 ->withErrors(['spreadsheet' => 'Monthly import failed: ' . $e->getMessage()]);
+        } finally {
+            @unlink($fullPath);
+        }
+    }
+
+    public function previewExpenditureImport(Request $request)
+    {
+        $request->validate([
+            'spreadsheet' => 'required|file|mimes:xlsx,xls|max:20480',
+            'year' => 'required|integer|min:2000|max:2100',
+        ]);
+
+        $year = (int) $request->input('year');
+        $path = $request->file('spreadsheet')->store('imports');
+        $fullPath = storage_path("app/{$path}");
+
+        try {
+            return response()->json($this->expenditureImporter->preview($fullPath, $year));
+        } catch (\Throwable $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'The expenditure spreadsheet could not be read',
+                'details' => $e->getMessage(),
+            ], 422);
+        } finally {
+            @unlink($fullPath);
+        }
+    }
+
+    public function finalExpenditureImport(Request $request)
+    {
+        $request->validate([
+            'spreadsheet' => 'required|file|mimes:xlsx,xls|max:20480',
+            'year' => 'required|integer|min:2000|max:2100',
+            'removed_expenditures' => 'nullable|string',
+        ]);
+
+        $year = (int) $request->input('year');
+        $path = $request->file('spreadsheet')->store('imports');
+        $fullPath = storage_path("app/{$path}");
+
+        try {
+            $feedback = $this->expenditureImporter->import($fullPath, $year, [
+                'removed_expenditures' => $this->decodeJsonArray($request->input('removed_expenditures')),
+            ]);
+
+            if ($request->expectsJson()) {
+                return response()->json($feedback);
+            }
+
+            return redirect()->route('dashboard', ['year' => $year])
+                ->with('import_feedback', $feedback)
+                ->with('success', 'Expenditure import completed successfully.');
+        } catch (\Throwable $e) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Expenditure import failed: ' . $e->getMessage(),
+                ], 422);
+            }
+
+            return redirect()->route('dashboard', ['year' => $year])
+                ->withErrors(['spreadsheet' => 'Expenditure import failed: ' . $e->getMessage()]);
         } finally {
             @unlink($fullPath);
         }
