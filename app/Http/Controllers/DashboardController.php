@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AppSetting;
 use App\Models\FinancialYear;
 use App\Models\Member;
 use App\Models\Payment;
@@ -17,6 +18,12 @@ class DashboardController extends Controller
 
         $fy = FinancialYear::where('year', $selectedYear)->first();
 
+        $importStates = [
+            'year' => AppSetting::importState('year'),
+            'month' => AppSetting::importState('month'),
+            'expenditure' => AppSetting::importState('expenditure'),
+        ];
+
         if (!$fy) {
             return view('dashboard.index', [
                 'years'           => $years,
@@ -30,6 +37,7 @@ class DashboardController extends Controller
                 'deficitMembers'  => collect(),
                 'yearOnYear'      => collect(),
                 'byCat'           => [],
+                'importStates'   => $importStates
             ]);
         }
 
@@ -97,7 +105,8 @@ class DashboardController extends Controller
             'topMembers',
             'deficitMembers',
             'yearOnYear',
-            'byCat'
+            'byCat',
+            'importStates'
         ));
     }
 }

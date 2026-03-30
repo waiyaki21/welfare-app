@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AppSetting;
 use App\Models\Payment;
 use App\Services\ExpenditureImportService;
 use App\Services\MonthlyImportService;
@@ -68,7 +69,14 @@ class ImportController extends Controller
         try {
             $preview = $this->importer->preview($fullPath);
             return response()->json($preview);
+        } catch (\App\Exceptions\SheetParseException $e) {
+            // Return friendly error and HTTP 422
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),   // friendly sheet parsing message
+            ], 422);
         } catch (\Throwable $e) {
+            // Fallback for unexpected errors
             return response()->json([
                 'status' => 'error',
                 'message' => 'The spreadsheet could not be read',
@@ -79,24 +87,86 @@ class ImportController extends Controller
         }
     }
 
+    public function previewLastUpload(Request $request)
+    {
+        $type = $request->input('type');
+
+        if (!$type) {
+            return response()->json(['message' => 'Type is required'], 422);
+        }
+
+        $upload = AppSetting::getLastUpload($type);
+
+        if (!$upload || !isset($upload['storage_path'])) {
+            return response()->json(['message' => 'No last upload found'], 404);
+        }
+
+        $fullPath = storage_path('app/' . $upload['storage_path']);
+
+        if (!file_exists($fullPath)) {
+            return response()->json(['message' => 'File not found'], 404);
+        }
+
+        try {
+            $preview = $this->importer->preview($fullPath);
+            return response()->json($preview);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'The spreadsheet could not be read',
+                'details' => $e->getMessage(),
+            ], 422);
+        }
+        // ✅ No finally @unlink — the saved file must not be deleted on preview
+    }
+
     public function finalYearImport(Request $request)
     {
-        $request->validate([
-            'spreadsheet' => 'required|file|mimes:xlsx,xls|max:20480',
-            'removed_members' => 'nullable|string',
-            'removed_payments' => 'nullable|string',
-            'removed_expenses' => 'nullable|string',
-        ]);
+        $useLastUpload = filter_var($request->input('use_last_upload'), FILTER_VALIDATE_BOOLEAN);
 
-        $path = $request->file('spreadsheet')->store('imports');
-        $fullPath = storage_path("app/{$path}");
+        if ($useLastUpload) {
+            // ── Use the previously saved file from AppSetting ────────────────
+            $upload = AppSetting::getLastUpload('year');
+
+            if (!$upload || !isset($upload['storage_path'])) {
+                return $this->importErrorResponse($request, 'No last upload found.');
+            }
+
+            $fullPath = storage_path('app/' . $upload['storage_path']);
+
+            if (!file_exists($fullPath)) {
+                return $this->importErrorResponse($request, 'Last uploaded file no longer exists.');
+            }
+
+            $originalName = $upload['file_name'];
+        } else {
+            // ── Regular file upload path ─────────────────────────────────────
+            $request->validate([
+                'spreadsheet'      => 'required|file|mimes:xlsx,xls|max:20480',
+                'removed_members'  => 'nullable|string',
+                'removed_payments' => 'nullable|string',
+                'removed_expenses' => 'nullable|string',
+            ]);
+
+            $file         = $request->file('spreadsheet');
+            $originalName = $file->getClientOriginalName();
+            $path         = $file->storeAs('imports', $originalName);
+            $fullPath     = storage_path("app/{$path}");
+        }
+
+        $saved = false;
 
         try {
             $feedback = $this->importer->import($fullPath, [
-                'removed_members' => $this->decodeJsonArray($request->input('removed_members')),
+                'removed_members'  => $this->decodeJsonArray($request->input('removed_members')),
                 'removed_payments' => $this->decodeJsonArray($request->input('removed_payments')),
                 'removed_expenses' => $this->decodeJsonArray($request->input('removed_expenses')),
             ]);
+
+            // Save/refresh last upload record only after a successful import
+            $storagePath = 'imports/' . $originalName;
+            $this->saveLastUpload('year', $originalName, $storagePath);
+            $saved = true;
 
             if ($request->expectsJson()) {
                 return response()->json($feedback);
@@ -107,18 +177,22 @@ class ImportController extends Controller
                 ->with('import_results', $feedback)
                 ->with('success', 'Import completed successfully.');
         } catch (\Throwable $e) {
-            if ($request->expectsJson()) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Final import failed: ' . $e->getMessage(),
-                ], 422);
-            }
-
-            return redirect()->route('dashboard')
-                ->withErrors(['spreadsheet' => 'Import failed: ' . $e->getMessage()]);
+            return $this->importErrorResponse($request, 'Final import failed: ' . $e->getMessage());
         } finally {
-            @unlink($fullPath);
+            // Only delete if this was a fresh upload AND it failed (keep saved files)
+            if (!$saved && !$useLastUpload) {
+                @unlink($fullPath);
+            }
         }
+    }
+
+    // Add this small private helper to avoid duplicating error responses:
+    private function importErrorResponse(Request $request, string $message)
+    {
+        if ($request->expectsJson()) {
+            return response()->json(['status' => 'error', 'message' => $message], 422);
+        }
+        return redirect()->route('dashboard')->withErrors(['spreadsheet' => $message]);
     }
 
     public function previewMonthImport(Request $request)
@@ -260,5 +334,14 @@ class ImportController extends Controller
         }
 
         return array_values(array_filter($decoded, fn($v) => is_string($v) && $v !== ''));
+    }
+
+    protected function saveLastUpload(string $type, string $originalName, string $storagePath): void
+    {
+        AppSetting::set("last_{$type}_upload", json_encode([
+            'file_name'    => $originalName,
+            'storage_path' => $storagePath,   // relative path e.g. "imports/MySheet.xlsx"
+            'uploaded_at'  => now()->toDateTimeString(),
+        ]));
     }
 }

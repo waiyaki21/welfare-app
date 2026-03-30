@@ -91,12 +91,16 @@ class SpreadsheetImportService
         }
 
         $duplicatePhonesInDb = Member::query()
-            ->selectRaw('phone, COUNT(*) as total')
+            ->select('phone', DB::raw('MIN(name) as name'), DB::raw('COUNT(*) as total'))
             ->whereNotNull('phone')
             ->where('phone', '!=', '')
             ->groupBy('phone')
             ->havingRaw('COUNT(*) > 1')
-            ->pluck('total', 'phone')
+            ->get()
+            ->keyBy('phone')
+            ->map(function ($item) {
+                return ['name' => $item->name, 'total' => $item->total];
+            })
             ->toArray();
 
         foreach ($spreadsheet->getAllSheets() as $sheet) {
@@ -106,7 +110,7 @@ class SpreadsheetImportService
             }
 
             try {
-                $parsed = $this->parseSheet($sheet, $year, $memberLookup, $duplicatePhonesInDb);
+                $parsed = $this->parseSheet($sheet, $year, $memberLookup, $duplicatePhonesInDb, $filePath);
                 $this->mergePreviewData($results, $parsed, !$persist);
 
                 if ($persist) {
@@ -116,8 +120,14 @@ class SpreadsheetImportService
                 }
 
                 $results['summary']['sheets_processed']++;
-            } catch (\Throwable $e) {
+            } catch (\App\Exceptions\SheetParseException $e) {
+                // Friendly error message
                 $results['errors'][] = "Sheet [{$sheet->getTitle()}]: {$e->getMessage()}";
+                // Optionally: stop processing further sheets if needed
+                break;
+            } catch (\Throwable $e) {
+                // Generic fallback for unexpected errors
+                $results['errors'][] = "Sheet [{$sheet->getTitle()}]: Unexpected error: {$e->getMessage()}";
             }
         }
 
@@ -135,7 +145,6 @@ class SpreadsheetImportService
         $results['expenses'] = $this->groupExpensesByMonth($results['expenses_info']);
 
         // Backward-compat aliases used by older dashboard snippets.
-        $results['membersInfo'] = $results['members_info'];
         $results['paymentsInfo'] = [
             'records_count' => $results['monthlyPayments_info']['totals']['records_count'],
             'total_amount' => $results['monthlyPayments_info']['totals']['total_amount'],
@@ -149,44 +158,48 @@ class SpreadsheetImportService
         Worksheet $sheet,
         int $year,
         array $memberLookup,
-        array $duplicatePhonesInDb
+        array $duplicatePhonesInDb,
+        string $filePath
     ): array {
         $rows = $this->sheetRowsAsCollection($sheet);
         [$headerRow, $colMap, $monthCols] = $this->detectHeaders($rows);
         if ($headerRow === null) {
-            throw new \RuntimeException('Could not find member header row.');
+            throw new \App\Exceptions\SheetParseException(
+                'Could not find member header row. Please check your spreadsheet format.'
+            );
         }
 
         $totalRowIndex = $this->detectTotalRowIndex($rows, $headerRow, $colMap);
         if ($totalRowIndex >= $rows->count()) {
-            throw new \RuntimeException('No totals row detected in the spreadsheet. Please check your file format.');
+            throw new \App\Exceptions\SheetParseException(
+                'No totals row detected in the spreadsheet. Please check your file format.'
+            );
         }
 
         $expenseOnlyRange = $this->locateExpenseOnlyRange($rows, $colMap);
         $memberRows = $rows->slice($headerRow + 1, max(0, $totalRowIndex - $headerRow - 1));
         $welfareSample = $this->detectWelfarePerMember($memberRows, $colMap);
 
-        $nameCounts = [];
-        $phoneCounts = [];
-        foreach ($memberRows as $row) {
-            if (!$this->isMemberRow($row, $colMap)) {
-                continue;
-            }
+        // --- Track duplicates in the sheet ---
+        $nameRows = [];
+        $phoneRows = [];
+        foreach ($memberRows as $rowIndex => $row) {
+            if (!$this->isMemberRow($row, $colMap)) continue;
 
             $name = $this->normaliseName((string) $row->get($colMap['name'] ?? -1, ''));
             $phone = $this->cleanPhone($row->get($colMap['phone'] ?? -1, ''));
 
-            if ($name !== '') {
+            if ($name) {
                 $key = strtolower($name);
-                $nameCounts[$key] = ($nameCounts[$key] ?? 0) + 1;
+                $nameRows[$key][] = $rowIndex + 1;
             }
             if ($phone) {
-                $phoneCounts[$phone] = ($phoneCounts[$phone] ?? 0) + 1;
+                $phoneRows[$phone][] = $rowIndex + 1;
             }
         }
 
         $parsedMembers = [];
-        $membersInfo = [
+        $membersData = [
             'existing_members' => [],
             'new_members' => [],
             'all_members' => [],
@@ -197,55 +210,71 @@ class SpreadsheetImportService
             'total_count' => 0,
         ];
         $monthlyInfo = $this->initialMonthlyPaymentsInfo();
-
         $sheetErrors = [];
         $failedRows = 0;
 
         foreach ($memberRows as $rowIndex => $row) {
-            if (!$this->isMemberRow($row, $colMap)) {
-                continue;
-            }
+            if (!$this->isMemberRow($row, $colMap)) continue;
 
             $name = $this->normaliseName((string) $row->get($colMap['name'] ?? -1, ''));
             $phone = $this->cleanPhone($row->get($colMap['phone'] ?? -1, ''));
             $rowNumber = $rowIndex + 1;
             $errors = [];
+            $conflicts = ['sheet_rows' => [], 'database_member' => null];
 
+            // --- Skip expense-only rows ---
             if ($this->isWithinExpenseOnlyRange($rowIndex, $expenseOnlyRange)) {
                 $failedRows++;
-                $membersInfo['error_members'][] = [
+                $membersData['error_members'][] = [
                     'row' => $rowNumber,
                     'name' => $name,
                     'phone' => $phone,
-                    'errors' => ['This row belongs to expense section and cannot be imported as a member.'],
+                    'errors' => ['This row belongs to the expense section and cannot be imported as a member.'],
                 ];
-                $sheetErrors[] = "{$name} row was moved to failed rows because it belongs to the expense range.";
+                $sheetErrors[] = "{$name} row was skipped because it belongs to the expense section.";
                 continue;
             }
 
-            if (($nameCounts[strtolower($name)] ?? 0) > 1) {
-                $errors[] = "{$name} appears more than once in the sheet.";
+            // --- Sheet name duplicates ---
+            if ($name && count($nameRows[strtolower($name)] ?? []) > 1) {
+                $duplicateRows = array_diff($nameRows[strtolower($name)], [$rowNumber]);
+                $errors[] = "Name '{$name}' appears multiple times in the sheet (also in rows: " . implode(', ', $duplicateRows) . ").";
+                $conflicts['sheet_rows'] = array_merge($conflicts['sheet_rows'], $duplicateRows);
             }
+
+            // --- Missing phone ---
             if (!$phone) {
-                $errors[] = "{$name} has no phone number and was moved to failed rows.";
+                $errors[] = "Phone number is missing for '{$name}'.";
             }
-            if ($phone && ($phoneCounts[$phone] ?? 0) > 1) {
-                $errors[] = "{$name} uses a duplicate phone ({$phone}) in this sheet.";
+
+            // --- Sheet phone duplicates ---
+            if ($phone && count($phoneRows[$phone] ?? []) > 1) {
+                $duplicateRows = array_diff($phoneRows[$phone], [$rowNumber]);
+                $errors[] = "Phone {$phone} is duplicated in the sheet (also in rows: " . implode(', ', $duplicateRows) . ").";
+                $conflicts['sheet_rows'] = array_merge($conflicts['sheet_rows'], $duplicateRows);
             }
+
+            // --- Database phone duplicates ---
             if ($phone && isset($duplicatePhonesInDb[$phone])) {
-                $errors[] = "{$name} - Phone {$phone} is duplicated in database.";
+                $existingMember = $duplicatePhonesInDb[$phone]; // ['name' => ..., 'total' => ...]
+                $existingName = $existingMember['name'] ?? 'Unknown';
+                if (strtolower($existingName) !== strtolower($name)) {
+                    $errors[] = "Phone {$phone} exists in database (sheet: '{$name}', database: '{$existingName}').";
+                } else {
+                    $errors[] = "Phone {$phone} already exists in database as: '{$existingName}'";
+                }
+                $conflicts['database_member'] = $existingName;
             }
 
             $member = $memberLookup[$this->memberLookupKey($name, $phone)] ?? null;
             $status = $member ? 'existing' : 'new';
 
+            // --- Monthly payments ---
             $payments = [];
             $monthsContributed = [];
             foreach ($monthCols as $monthNumber => $colIndex) {
                 $amount = $this->toFloat($row->get($colIndex, 0));
-                if ($amount <= 0) {
-                    continue;
-                }
+                if ($amount <= 0) continue;
 
                 $payments[] = ['month' => $monthNumber, 'amount' => $amount];
                 $monthsContributed[] = $monthNumber;
@@ -263,6 +292,7 @@ class SpreadsheetImportService
                 $monthlyInfo['totals']['total_amount'] += $amount;
             }
 
+            // --- Build member record ---
             $memberRecord = [
                 'row' => $rowNumber,
                 'name' => $name,
@@ -272,12 +302,14 @@ class SpreadsheetImportService
                 'contributions_carried_forward' => $this->toFloat($row->get($colMap['cf'] ?? -1, 0)),
                 'total_welfare' => $this->toFloat($row->get($colMap['welfare'] ?? -1, 0)),
                 'total_contributions' => $this->toFloat($row->get($colMap['cf'] ?? -1, 0)),
+                'total_investment' => $this->toFloat($row->get($colMap['invest'] ?? -1, 0)),
                 'months_contributed' => $monthsContributed,
                 'errors' => $errors,
+                'conflicts' => $conflicts,
             ];
 
-            $membersInfo['members'][] = $memberRecord;
-            $membersInfo['all_members'][] = [
+            $membersData['members'][] = $memberRecord;
+            $membersData['all_members'][] = [
                 'row' => $rowNumber,
                 'name' => $name,
                 'phone' => $phone,
@@ -285,18 +317,19 @@ class SpreadsheetImportService
             ];
 
             if ($status === 'existing') {
-                $membersInfo['existing_members'][] = $membersInfo['all_members'][array_key_last($membersInfo['all_members'])];
+                $membersData['existing_members'][] = $membersData['all_members'][array_key_last($membersData['all_members'])];
             } else {
-                $membersInfo['new_members'][] = $membersInfo['all_members'][array_key_last($membersInfo['all_members'])];
+                $membersData['new_members'][] = $membersData['all_members'][array_key_last($membersData['all_members'])];
             }
 
             if (!empty($errors)) {
                 $failedRows++;
-                $membersInfo['error_members'][] = [
+                $membersData['error_members'][] = [
                     'row' => $rowNumber,
                     'name' => $name,
                     'phone' => $phone,
                     'errors' => $errors,
+                    'conflicts' => $conflicts,
                 ];
                 foreach ($errors as $error) {
                     $sheetErrors[] = $error;
@@ -310,6 +343,7 @@ class SpreadsheetImportService
                 'matched_member_id' => $member?->id,
                 'status' => $status,
                 'errors' => $errors,
+                'conflicts' => $conflicts,
                 'financial' => [
                     'contributions_brought_forward' => $this->toFloat($row->get($colMap['bf'] ?? -1, 0)),
                     'contributions_carried_forward' => $this->toFloat($row->get($colMap['cf'] ?? -1, 0)),
@@ -340,22 +374,21 @@ class SpreadsheetImportService
             'sheet_name' => $sheet->getTitle(),
             'welfare_per_member' => $welfareSample,
             'members' => $parsedMembers,
-            'members_info' => $membersInfo,
+            'members_info' => $membersData,
             'monthlyPayments_info' => $monthlyInfo,
             'expenses_info' => $expensesInfo,
             'sheet_info' => [
-                'sheet_name' => $sheet->getTitle(),
-                'year' => $year,
-                'header_row' => $headerRow + 1,
-                'total_row' => $totalRowIndex + 1,
-                'total_members' => count($membersInfo['members']),
-                'total_contributions' => $totalsFromRow['total_contributions'],
-                'total_welfare' => $totalsFromRow['total_welfare'],
-                'total_payments' => $totalsFromRow['total_payments'],
-                'months_detected' => array_values(array_map(
-                    fn($m) => Payment::MONTHS[$m] ?? (string) $m,
-                    array_keys($monthCols)
-                )),
+                ['label' => 'Sheet Name', 'value' => $sheet->getTitle(), 'full' => true],
+                ['label' => 'File Path', 'value' => $filePath, 'full' => true, 'type' => 'copy'],
+                ['label' => 'Year', 'value' => $year],
+                ['label' => 'Header Row', 'value' => $headerRow + 1],
+                ['label' => 'Total Row', 'value' => $totalRowIndex + 1],
+                ['label' => 'Total Members', 'value' => count($membersData['members'])],
+                ['label' => 'Total Contributions', 'value' => $totalsFromRow['total_contributions'], 'type' => 'currency'],
+                ['label' => 'Total Welfare', 'value' => $totalsFromRow['total_welfare'], 'type' => 'currency'],
+                ['label' => 'Total Payments', 'value' => $totalsFromRow['total_payments'], 'type' => 'currency'],
+                ['label' => 'Total Investments', 'value' => $totalsFromRow['total_investments'], 'type' => 'currency'],
+                ['label' => 'Months Detected', 'value' => array_keys($monthCols), 'type' => 'count'],
             ],
             'bank_closing' => $bankClosing,
             'failed_rows' => $failedRows,
@@ -460,7 +493,7 @@ class SpreadsheetImportService
             $results['summary']['failed_rows'] += $parsed['failed_rows'];
         }
 
-        $results['sheet_info'][] = $parsed['sheet_info'];
+        $results['sheet_info'] = $parsed['sheet_info'];
         $results['errors'] = array_merge($results['errors'], $parsed['errors']);
 
         $results['members_info']['existing_members'] = array_merge(
@@ -537,12 +570,14 @@ class SpreadsheetImportService
         $sheetContributions = 0.0;
         $sheetWelfare = 0.0;
         $sheetPayments = 0.0;
+        $sheetInvestments = 0.0;
 
         foreach ($results['sheet_info'] as $sheet) {
             $sheetMembers += (int) ($sheet['total_members'] ?? 0);
             $sheetContributions += (float) ($sheet['total_contributions'] ?? 0);
             $sheetWelfare += (float) ($sheet['total_welfare'] ?? 0);
             $sheetPayments += (float) ($sheet['total_payments'] ?? 0);
+            $sheetInvestments += (float) ($sheet['total_investments'] ?? 0);
         }
 
         if ($sheetContributions <= 0.0) {
@@ -559,6 +594,13 @@ class SpreadsheetImportService
             ));
         }
 
+        if ($sheetInvestments <= 0.0) {
+            $sheetInvestments = (float) array_sum(array_map(
+                fn(array $member) => (float) ($member['total_investments'] ?? 0),
+                $results['members_info']['members'] ?? []
+            ));
+        }
+
         if ($sheetPayments <= 0.0) {
             $sheetPayments = (float) ($results['monthlyPayments_info']['totals']['total_amount'] ?? 0.0);
         }
@@ -569,6 +611,7 @@ class SpreadsheetImportService
             'total_welfare' => $sheetWelfare,
             'total_expenses' => (float) ($results['expenses_info']['totals']['total_amount'] ?? 0.0),
             'total_payments' => $sheetPayments,
+            'total_investments' => $sheetInvestments
         ];
     }
 
@@ -995,6 +1038,7 @@ class SpreadsheetImportService
         return strtolower($this->normaliseName($name)) . '|' . ($this->cleanPhone($phone) ?? '');
     }
 
+    // TODO: CHECK FOR FULL STOPS IN THE NAME AND ALSO IF THE PHONE NUMBER IS DUPLICATED ASSIGN A NEW UNIQUE PHONE NUMBER AND WHEN THE NEXT UPLOAD COMES ALONG WITH A NEW PHONE NUMBER LET THE UNIQUE PLACEHOLDER NUMBER BE REPLACED WITH A NEW VALUE
     private function normaliseName(string $name): string
     {
         return trim((string) preg_replace('/\s+/', ' ', $name));
@@ -1095,6 +1139,7 @@ class SpreadsheetImportService
                 'total_contributions' => 0.0,
                 'total_welfare' => 0.0,
                 'total_payments' => 0.0,
+                'total_investments' => 0.0
             ];
         }
 
@@ -1105,11 +1150,13 @@ class SpreadsheetImportService
 
         $contributions = $this->toFloat($row->get($colMap['cf'] ?? -1, 0));
         $welfare = $this->toFloat($row->get($colMap['welfare'] ?? -1, 0));
+        $investment = $this->toFloat($row->get($colMap['invest'] ?? -1, 0));
 
         return [
             'total_contributions' => $contributions,
             'total_welfare' => $welfare,
             'total_payments' => $payments,
+            'total_investments' => $investment
         ];
     }
 }

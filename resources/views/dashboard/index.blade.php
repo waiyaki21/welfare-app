@@ -2,30 +2,34 @@
 @section('title', 'Dashboard')
 
 @section('topbar-actions')
-<form method="GET" class="flex items-center gap-2" style="flex-shrink:0;padding-top: 12px;padding-bottom: 12px;">
-    <label class="text-sm text-mid" style="white-space:nowrap">Year</label>
-    <select name="year" onchange="this.form.submit()" class="form-control" style="width:90px;padding:6px 28px 6px 10px;">
-        @foreach($years as $yr)
-            <option value="{{ $yr }}" {{ $yr == $selectedYear ? 'selected' : '' }}>{{ $yr }}</option>
-        @endforeach
-    </select>
-</form>
-@if(\App\Models\AppSetting::monthlyImportEnabled())
-<button onclick="document.getElementById('monthlyImportModal').classList.add('open')" class="btn btn-outline btn-sm" style="white-space:nowrap;flex-shrink:0;">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-    Import Month
-</button>
-@endif
-@if(\App\Models\AppSetting::yearlyImportEnabled())
-<button id="openYearImportModal" class="btn btn-primary btn-sm" style="white-space:nowrap;flex-shrink:0;">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-    Import Year
-</button>
-@endif
-<button id="openExpenditureImportModal" class="btn btn-outline btn-sm" style="white-space:nowrap;flex-shrink:0;">
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 7h16"></path><path d="M4 12h16"></path><path d="M4 17h10"></path></svg>
-    Import Expenditures
-</button>
+    @if($fy)
+    <form method="GET" class="flex items-center gap-2" style="flex-shrink:0;padding-top: 12px;padding-bottom: 12px;">
+        <label class="text-sm text-mid" style="white-space:nowrap">Select Year</label>
+        <select name="year" onchange="this.form.submit()" class="form-control" style="width:90px;padding:6px 28px 6px 10px;">
+            @foreach($years as $yr)
+                <option value="{{ $yr }}" {{ $yr == $selectedYear ? 'selected' : '' }}>{{ $yr }}</option>
+            @endforeach
+        </select>
+    </form>
+    @endif
+    @if($importStates['month']['enabled'])
+    <button id="openMonthlyImportModal" class="btn btn-outline btn-sm" style="white-space:nowrap;flex-shrink:0;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"> <rect x="3" y="4" width="18" height="18" rx="2"/> <line x1="16" y1="2" x2="16" y2="6"/> <line x1="8" y1="2" x2="8" y2="6"/> <line x1="3" y1="10" x2="21" y2="10"/> </svg>
+        Import Month
+    </button>
+    @endif
+    @if($importStates['year']['enabled'])
+    <button id="openYearImportModal" class="btn btn-primary btn-sm" style="white-space:nowrap;flex-shrink:0;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Import Year
+    </button>
+    @endif
+    @if($importStates['expenditure']['enabled'])
+    <button id="openExpenditureImportModal" class="btn btn-outline btn-sm" style="white-space:nowrap;flex-shrink:0;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 7h16"></path><path d="M4 12h16"></path><path d="M4 17h10"></path></svg>
+        Import Expenditures
+    </button>
+    @endif
 @endsection
 
 @section('content')
@@ -91,12 +95,17 @@
 </div>
 @endif
 
+{{-- if no years --}}
 @if(!$fy)
     <div class="empty-state">
-        <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <svg width="84" height="84" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         <h3>No data yet</h3>
         <p>Import a financial spreadsheet to get started.</p>
-        <a href="{{ route('import.show') }}" class="btn btn-primary mt-4">Import Spreadsheet</a>
+        @if(\App\Models\AppSetting::yearlyImportEnabled())
+            <button id="openYearImportModal" class="btn btn-primary mt-4" onclick="document.getElementById('importModal').classList.add('open')" style="white-space:nowrap;flex-shrink:0;" >
+                Import Year Spreadsheet
+            </button>
+        @endif
     </div>
 @else
 
@@ -317,15 +326,55 @@
 <div class="modal-backdrop" id="importModal">
     <div class="modal" id="yearImportDialog" style="max-width:580px;transition:max-width .25s ease;">
         <div class="modal-head">
-            <div class="modal-title">Import Yearly Spreadsheet</div>
+            <div class="modal-title flex items-center gap-2">
+                Import Yearly Spreadsheet
+
+                @if($importStates['year']['has_last_upload'])
+                    <span class="badge badge-g" style="font-size:.65rem;">
+                        Last upload available
+                    </span>
+                @endif
+            </div>
+
             <button class="close-btn" id="closeYearImportModal" aria-label="Close import modal">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6 6 18"></path>
+                    <path d="m6 6 12 12"></path>
+                </svg>
             </button>
         </div>
         <form method="POST" action="{{ route('import.store') }}" enctype="multipart/form-data" id="import-form">
             @csrf
             <div class="modal-body import-preview-shell">
                 <div id="year-form-section" class="import-preview-form">
+                    @if($importStates['year']['has_last_upload'])
+                    <div class="import-last-upload-card" id="last-upload-card">
+                        <div class="last-upload-container">
+                            <div class="last-upload-info">
+                                <div class="import-last-upload-title">Use last uploaded file?</div>
+                                <div class="import-last-upload-meta">
+                                    <div class="meta-row">
+                                        <strong>File:</strong> {{ $importStates['year']['last_upload']['file_name'] }}
+                                    </div>
+                                    <div class="meta-date">
+                                        Uploaded: {{ $importStates['year']['last_upload']['uploaded_at'] }}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="last-upload-action">
+                                <label class="custom-switch">
+                                    <input type="checkbox"
+                                        id="use-last-upload"
+                                        data-preview-url="{{ route('import.preview.last', 'year') }}">
+                                    <span class="custom-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                        {{-- Status line shown while loading preview for the saved file --}}
+                        <div id="last-upload-status" style="display:none;font-size:.78rem;color:var(--mid);margin-top:8px;padding-top:8px;border-top:1px solid var(--border);"></div>
+                    </div>
+                    @endif
+
                     <div id="drop-zone" class="import-drop-zone">
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="var(--sage)" stroke-width="1.5" style="margin:0 auto 10px;display:block;">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -427,10 +476,12 @@
 
 {{-- Monthly Import Modal --}}
 <div class="modal-backdrop" id="monthlyImportModal">
-    <div class="modal" style="max-width:540px;">
+    <div class="modal" style="max-width:580px;transition:max-width .25s ease;">
         <div class="modal-head">
             <div class="modal-title">Import Monthly Payments</div>
-            <button class="close-btn" onclick="closeMonthlyModal()">X</button>
+            <button class="close-btn" id="closeMonthlyModalX" aria-label="Close Monthly import modal">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+            </button>
         </div>
         <div class="modal-body" style="padding-bottom:8px;">
 
@@ -458,7 +509,7 @@
                     </div>
                 </div>
                 <div style="margin-top:12px;">
-                    <button type="button" onclick="downloadTemplate()" class="btn btn-outline btn-sm" style="gap:6px;">
+                    <button type="button" id="btn-download-template" class="btn btn-outline btn-sm" style="gap:6px;">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                         Download Template for Selected Month
                     </button>
@@ -479,22 +530,22 @@
                     <input type="hidden" name="month" id="upload-month">
 
                     <div id="monthly-drop-zone"
-                         style="border:2px dashed var(--border);border-radius:var(--r-sm);padding:24px 16px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s;"
-                         onclick="document.getElementById('monthly-file-input').click()"
-                         ondragover="mHandleDragOver(event)" ondragleave="mHandleDragLeave(event)" ondrop="mHandleDrop(event)">
+                         style="border:2px dashed var(--border);border-radius:var(--r-sm);padding:24px 16px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s;">
                         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--sage)" stroke-width="1.5" style="margin:0 auto 8px;display:block;">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                             <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
                         </svg>
                         <div id="monthly-drop-label" style="font-size:.875rem;font-weight:500;color:var(--ink);margin-bottom:3px;">Drop filled template here</div>
                         <div style="font-size:.78rem;color:var(--mid);">or click to browse</div>
-                        <input type="file" id="monthly-file-input" name="spreadsheet" accept=".xlsx,.xls" style="display:none" onchange="mHandleFileSelect(this)">
+                        <input type="file" id="monthly-file-input" name="spreadsheet" accept=".xlsx,.xls" style="display:none">
                     </div>
 
                     <div id="monthly-file-info" style="display:none;margin-top:10px;padding:9px 12px;background:var(--mist);border-radius:var(--r-sm);align-items:center;gap:10px;">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--leaf)" stroke-width="2" style="flex-shrink:0;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                         <span id="monthly-file-name" style="font-size:.855rem;font-weight:500;color:var(--forest);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
-                        <button type="button" onclick="mClearFile()" style="background:none;border:none;color:var(--mid);cursor:pointer;font-size:13px;padding:0 2px;">X</button>
+                        <button type="button" id="clearMonthlyFile" class="close-btn" aria-label="Clear Monthly import file">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+                        </button>
                     </div>
 
                     <div style="margin-top:12px;padding:10px 12px;background:#fef3c7;border-radius:var(--r-sm);font-size:.78rem;color:#92400e;line-height:1.6;">
@@ -502,7 +553,7 @@
                     </div>
 
                     <div class="modal-foot" style="padding:14px 0 0;border-top:none;">
-                        <button type="button" onclick="closeMonthlyModal()" class="btn btn-outline">Cancel</button>
+                        <button type="button" id="closeMonthlyModalX" class="btn btn-outline">Cancel</button>
                         <button type="submit" id="monthly-import-btn" class="btn btn-primary" disabled>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                             Import Payments
@@ -589,11 +640,18 @@
             previewUrl: '{{ route("imports.year.preview") }}',
             finalUrl: '{{ route("imports.year.final") }}',
             openOnError: {{ $errors->has('spreadsheet') ? 'true' : 'false' }},
+            lastUploadPreviewUrl: '{{ route("import.preview.last") }}',
+            hasLastUpload: {{ $importStates['year']['has_last_upload'] ? 'true' : 'false' }},
+            type: 'year'
         },
         expenditureImport: {
             previewUrl: '{{ route("imports.expenditures.preview") }}',
             finalUrl: '{{ route("imports.expenditures.final") }}',
         },
+        monthlyImport: {
+            templateUrl: '{{ route("import.monthly.template") }}',
+            finalUrl: '{{ route("import.monthly.store") }}'
+        }
     };
 </script>
 @endpush

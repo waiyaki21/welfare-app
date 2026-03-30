@@ -4,7 +4,10 @@
     const icons = {
         trash: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="m19 6-1 14H6L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path></svg>',
         spinner: '<svg class="preview-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg>',
-        undo: '<svg width="12" height="12" viewBox="0 0 25 25" fill="none">< path d="M5.88468 17C7.32466 19.1128 9.75033 20.5 12.5 20.5C16.9183 20.5 20.5 16.9183 20.5 12.5C20.5 8.08172 16.9183 4.5 12.5 4.5C8.08172 4.5 4.5 8.08172 4.5 12.5V13.5" stroke="#121923" stroke- width="1.2" /><path d="M7 11L4.5 13.5L2 11" stroke="#121923" stroke-width="1.2" /></svg >',
+        undo: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 14 4 9l5-5"></path>
+            <path d="M20 20a8 8 0 0 0-11-11L4 9"></path>
+        </svg>`
     };
 
     const qs = (id) => document.getElementById(id);
@@ -56,6 +59,7 @@
     function yearController(options) {
         const state = {
             previewReady: false,
+            usingLastUpload: false,
             previewData: null,
             memberFilter: 'all', // all | existing | new | errors
             activeTab: 'overview',
@@ -66,6 +70,7 @@
             removedExpenseMonths: new Map(),
             paymentMonthItems: new Map(),
             expenseMonthItems: new Map(),
+            selectedFile: null
         };
         const el = {
             modal: qs('importModal'),
@@ -83,6 +88,8 @@
             tabs: qs('year-tabs'),
             body: qs('year-tab-body'),
             clearButton: qs('clearYearImportFile'),
+            lastUploadToggle: qs('use-last-upload'),
+            lastUploadCard: qs('last-upload-card'),
         };
 
         const memberKey = (row) => `${row?.row || ''}|${String(row?.name || '').trim().toLowerCase()}|${row?.phone || ''}`;
@@ -110,6 +117,8 @@
         };
 
         const showPreviewError = () => {
+            console.log('showpreviewerror');
+
             el.previewContent.style.display = 'none';
             el.previewPlaceholder.style.display = 'flex';
             el.previewPlaceholder.innerHTML = '<div class="preview-error-state"><div style="font-weight:700;margin-bottom:6px;">Import Preview Failed</div><div>The spreadsheet could not be read</div></div>';
@@ -127,13 +136,14 @@
         };
 
         const renderErrors = (data) => {
-            const members = data.members || data.members_info || {};
+            const members = data.members_info || {};
             const memberErrors = (members.error_members || []).flatMap((entry) => (entry.errors || []).map((message) => ({
                 title: `${entry.name || 'Unknown member'}${entry.phone ? ` (${entry.phone})` : ''}`,
                 message,
             })));
             const genericErrors = (data.errors || []).map((message) => ({ title: 'General Validation', message }));
             const errors = [...memberErrors, ...genericErrors];
+            // TODO: SHOW DIFFERENT TYPES OF ERRORS WITH DIFF STYLES
             if (!errors.length) return '<div class="preview-empty">No errors found.</div>';
             return `<div class="preview-error-grid preview-tab-scroll">${errors.map((error) => `<div class="preview-glass preview-error-card"><div class="preview-error-head">${escapeHtml(error.title)}</div><div class="preview-error-body">${escapeHtml(error.message)}</div></div>`).join('')}</div>`;
         };
@@ -141,7 +151,7 @@
         const renderMembers = (data) => {
             const scrollTop = el.body.scrollTop; // save scroll
 
-            const members = data.members || data.members_info || {};
+            const members = data.members_info || {};
             const allMembers = members.members || [];
 
             const rows = allMembers.map((row) => {
@@ -175,86 +185,80 @@
 
             el.body.scrollTop = scrollTop; // restore scroll
 
-            return `<div class="preview-glass preview-members">
-        <div class="preview-members-summary flex justify-between items-center">
-            <div class="filters-left flex gap-2">
-                <button class="filter-chip ${state.memberFilter === 'existing' ? 'active' : ''}" data-filter="existing">
-                    Existing: <strong>${counts.existing}</strong>
-                </button>
-                <button class="filter-chip ${state.memberFilter === 'new' ? 'active' : ''}" data-filter="new">
-                    New: <strong>${counts.new}</strong>
-                </button>
-                <button class="filter-chip ${state.memberFilter === 'errors' ? 'active' : ''}" data-filter="errors">
-                    Errors: <strong>${counts.errors}</strong>
-                </button>
-                ${counts.deleted > 0 ? `<button class="filter-chip ${state.memberFilter === 'deleted' ? 'active' : ''}" data-filter="deleted">
-                    Deleted: <strong>${counts.deleted}</strong>
-                </button>` : ''}
-            </div>
-            <div class="filters-right">
-                <button class="filter-chip ${state.memberFilter === 'all' ? 'active' : ''}" data-filter="all">
-                    View All: <strong>${counts.total}</strong>
-                </button>
-            </div>
-        </div>
+            // TODO: INCLUDE THE INVESTMENT(member.total_investment) HERE & SHOW A NO OR ZERO EXISTING/NEW/ERROR/DELETED MEMBERS
+            return `<div class="preview-glass preview-members"><div class="preview-members-summary flex justify-between items-center"> <div class="filters-left flex gap-2"> <button type="button" class="filter-chip ${state.memberFilter === 'existing' ? 'active' : ''}" data-filter="existing"> Existing: <strong>${counts.existing}</strong> </button> <button type="button" class="filter-chip ${state.memberFilter === 'new' ? 'active' : ''}" data-filter="new"> New: <strong>${counts.new}</strong> </button> <button type="button" class="filter-chip ${state.memberFilter === 'errors' ? 'active' : ''}" data-filter="errors"> Errors: <strong>${counts.errors}</strong> </button> ${counts.deleted > 0 ? `<button type="button" class="filter-chip ${state.memberFilter === 'deleted' ? 'active' : ''}" data-filter="deleted"> Deleted: <strong>${counts.deleted}</strong> </button>` : ''} </div> <div class="filters-right"> <button type="button" class="filter-chip ${state.memberFilter === 'all' ? 'active' : ''}" data-filter="all"> View All: <strong>${counts.total}</strong> </button> </div> </div>
+            <div class="preview-table-wrap"> <table class="preview-table"> <thead> <tr> <th>#</th> <th>Name</th> <th class="num">C/F</th> <th class="num" title="Total Contributions">T.C</th> <th class="num" title="Total Welfares">T.W</th> </tr> </thead> <tbody> ${rows.filter(row => { if (state.memberFilter === 'existing') return row.status === 'existing' && !row.isDeleted; if (state.memberFilter === 'new') return row.status === 'new' && !row.isDeleted; if (state.memberFilter === 'errors') return (row.errors || []).length > 0 && !row.isDeleted; if (state.memberFilter === 'deleted') return row.isDeleted; return true; }).map((row, index) => ` <tr class="${row.isDeleted ? 'preview-row-deleted' : (row.errors || []).length ? 'preview-row-error' : ''}"> <td>${index + 1}</td> <td> <div class="preview-member-row"> <div class="member-info"> <div class="member-name" title="${escapeHtml(row.name || '-')}"> ${escapeHtml(row.name || '-')} </div> <div class="member-phone"> ${escapeHtml(row.phone || 'No phone')} <span class="member-badge ${row.badgeClass}">${row.badgeText}</span> ${row.isDeleted ? `<span class="member-badge badge-deleted">Deleted</span>` : ''} </div> </div> <button type="button" class="${row.isDeleted ? 'preview-undo-btn inline' : 'preview-remove-btn inline'}" data-action="${row.isDeleted ? 'undo-member' : 'remove-member'}" data-key="${escapeHtml(row.key)}" > ${row.isDeleted ? icons.undo : icons.trash} </button> </div> ${(row.errors || []).length ? `<div class="member-inline-error">${escapeHtml((row.errors || []).join(' '))}</div>` : ''} </td> <td class="num">${Number(row.contributions_carried_forward || 0).toLocaleString()}</td> <td class="num">${Number(row.total_contributions || 0).toLocaleString()}</td> <td class="num">${Number(row.total_welfare || 0).toLocaleString()}</td> </tr>`).join('')} </tbody> </table> </div></div>`;
+        };
 
-        <div class="preview-table-wrap">
-            <table class="preview-table">
-                <thead>
-                    <tr>
-                        <th>#</th>
-                        <th>Name</th>
-                        <th class="num">C/F</th>
-                        <th class="num" title="Total Contributions">T.C</th>
-                        <th class="num" title="Total Welfares">T.W</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${rows
-                    .filter(row => {
-                        if (state.memberFilter === 'existing') return row.status === 'existing' && !row.isDeleted;
-                        if (state.memberFilter === 'new') return row.status === 'new' && !row.isDeleted;
-                        if (state.memberFilter === 'errors') return (row.errors || []).length > 0 && !row.isDeleted;
-                        if (state.memberFilter === 'deleted') return row.isDeleted;
-                        return true; // all
-                    })
-                    .map((row, index) => `
-                        <tr class="${row.isDeleted ? 'preview-row-deleted' : (row.errors || []).length ? 'preview-row-error' : ''}">
-                            <td>${index + 1}</td>
-                            <td>
-                                <div class="preview-member-row">
-                                    <div class="member-info">
-                                        <div class="member-name" title="${escapeHtml(row.name || '-')}">
-                                            ${escapeHtml(row.name || '-')}
-                                        </div>
-                                        <div class="member-phone">
-                                            ${escapeHtml(row.phone || 'No phone')}
-                                            <span class="member-badge ${row.badgeClass}">${row.badgeText}</span>
-                                            ${row.isDeleted ? `<span class="member-badge badge-deleted">Deleted</span>` : ''}
-                                        </div>
-                                    </div>
-                                    <button type="button" class="preview-remove-btn inline" 
-                                        data-action="${row.isDeleted ? 'undo-member' : 'remove-member'}" 
-                                        data-key="${escapeHtml(row.key)}">
-                                        ${row.isDeleted ? icons.undo : icons.trash}
-                                    </button>
-                                </div>
-                                ${(row.errors || []).length ? `<div class="member-inline-error">${escapeHtml((row.errors || []).join(' '))}</div>` : ''}
-                            </td>
-                            <td class="num">${Number(row.contributions_carried_forward || 0).toLocaleString()}</td>
-                            <td class="num">${Number(row.total_contributions || 0).toLocaleString()}</td>
-                            <td class="num">${Number(row.total_welfare || 0).toLocaleString()}</td>
-                        </tr>`).join('')}
-                </tbody>
-            </table>
+        const renderOverview = (data) => {
+            const info = data.sheet_info || [];
+
+            return `
+    <div class="preview-glass preview-overview">
+        <div class="preview-summary-grid">
+            ${info.map(item => {
+                let valueHtml = '';
+                let rawValue = item.value;
+
+                // Handle COUNT Type
+                if (item.type === 'count') {
+                    const count = Array.isArray(rawValue) ? rawValue.length : (rawValue || 0);
+                    valueHtml = `<span class="value-text-bold">${count}</span>`;
+                }
+                // Handle CURRENCY Type
+                else if (item.type === 'currency') {
+                    valueHtml = `<span class="value-text-bold">${formatKES(rawValue || 0)}</span>`;
+                }
+                // Handle COPY Type
+                else if (item.type === 'copy') {
+                    valueHtml = `
+                        <div class="copy-field-container">
+                            <span class="copy-value-text">${escapeHtml(rawValue)}</span>
+                            <button type="button" class="copy-action-btn" onclick="copyToClipboard('${escapeHtml(rawValue)}', this)">
+                                ${icons.copy || 'Copy'}
+                            </button>
+                        </div>`;
+                }
+                // Handle LIST Type
+                else if (item.type === 'list' && Array.isArray(rawValue)) {
+                    valueHtml = `
+                        <div class="list-pill-wrapper">
+                            ${rawValue.map(v => `<span class="preview-pill">${escapeHtml(v)}</span>`).join('')}
+                        </div>`;
+                }
+                // Default / String
+                else {
+                    valueHtml = `<span class="value-text-bold">${escapeHtml(rawValue)}</span>`;
+                }
+
+                return `
+                    <div class="preview-summary-item ${item.full ? 'grid-full' : ''}">
+                        <div class="preview-summary-label">${escapeHtml(item.label)}</div>
+                        <div class="preview-summary-value-content">${valueHtml}</div>
+                    </div>
+                `;
+            }).join('')}
         </div>
     </div>`;
         };
 
-        const renderOverview = (data) => {
-            const o = data.overview || {};
-            const rows = [['Total Members', o.total_members || 0], ['Total Contributions', formatKES(o.total_contributions || 0)], ['Total Welfare', formatKES(o.total_welfare || 0)], ['Total Expenses', formatKES(o.total_expenses || 0)], ['Total Payments', formatKES(o.total_payments || 0)]];
-            return `<div class="preview-glass preview-overview"><div class="preview-summary-grid">${rows.map(([label, value]) => `<div class="preview-summary-item"><div class="preview-summary-label">${escapeHtml(label)}</div><div class="preview-summary-value">${escapeHtml(value)}</div></div>`).join('')}</div></div>`;
+        window.copyToClipboard = (text, btn) => {
+            navigator.clipboard.writeText(text).then(() => {
+                const originalText = btn.innerHTML;
+                const originalBg = btn.style.backgroundColor;
+
+                btn.innerHTML = 'COPIED';
+                btn.style.backgroundColor = '#10b981'; // Green-500
+                btn.style.color = 'white';
+                btn.style.borderColor = '#10b981';
+
+                setTimeout(() => {
+                    btn.innerHTML = originalText;
+                    btn.style.backgroundColor = originalBg;
+                    btn.style.color = '';
+                    btn.style.borderColor = '';
+                }, 2000);
+            });
         };
 
         const renderMonthCards = (type, months) => {
@@ -322,6 +326,7 @@
         };
 
         attachDropZone(el.dropZone, el.fileInput, (file) => {
+            state.selectedFile = file;
             el.dropLabel.textContent = 'File ready';
             el.fileInfo.style.display = 'flex';
             el.fileName.textContent = file.name;
@@ -340,13 +345,22 @@
         el.form?.addEventListener('submit', async (event) => {
             event.preventDefault();
             if (!state.previewReady) return;
-            const file = el.fileInput?.files?.[0];
-            if (!file) return;
+
             const formData = new FormData();
-            formData.append('spreadsheet', file);
+
+            if (state.usingLastUpload) {
+                // Tell the controller to use the saved file — no file upload needed
+                formData.append('use_last_upload', 'true');
+            } else {
+                const file = state.selectedFile || el.fileInput?.files?.[0];
+                if (!file) return;
+                formData.append('spreadsheet', file);
+            }
+
             formData.append('removed_members', JSON.stringify(Array.from(state.removedMembers)));
             formData.append('removed_payments', JSON.stringify(Array.from(state.removedPayments)));
             formData.append('removed_expenses', JSON.stringify(Array.from(state.removedExpenses)));
+
             try {
                 el.importButton.disabled = true;
                 el.importButton.innerHTML = `${icons.spinner}<span>Importing...</span>`;
@@ -390,10 +404,27 @@
                 if (type === 'expense') state.removedExpenseMonths.delete(month);
             }
 
+            // Global Helper for Clipboard
+            if (action === 'copy-path' && key) {
+                window.copyToClipboard = (text, el) => {
+                    navigator.clipboard.writeText(text).then(() => {
+                        const originalInner = el.innerHTML;
+                        el.classList.add('copied');
+                        el.querySelector('.copy-icon').innerHTML = '✅';
+                        setTimeout(() => {
+                            el.classList.remove('copied');
+                            el.innerHTML = originalInner;
+                        }, 2000);
+                    });
+                };
+            }
+
             // === Filter buttons ===
             if (target.dataset.filter) {
+                event.preventDefault(); // extra safety
                 state.memberFilter = target.dataset.filter;
-                renderMembers(state.previewData); // render only members to highlight deleted
+                renderPreview(state.previewData, false);
+                activate('members');
                 return;
             }
 
@@ -402,6 +433,64 @@
             activate(state.activeTab);
         });
         showPlaceholder();
+        // ── Last upload toggle ────────────────────────────────────────────────
+        if (el.lastUploadToggle) {
+            el.lastUploadToggle.addEventListener('change', async () => {
+                const isOn = el.lastUploadToggle.checked;
+                const statusEl = qs('last-upload-status');
+
+                if (isOn) {
+                    // Hide the regular drop zone, clear any existing file selection
+                    el.dropZone.style.display = 'none';
+                    el.fileInfo.style.display = 'none';
+                    el.fileInput.value = '';
+                    if (statusEl) {
+                        statusEl.style.display = 'block';
+                        statusEl.textContent = 'Loading preview from saved file…';
+                    }
+
+                    expand();
+                    showPlaceholder('Generating preview... please wait');
+                    el.importButton.disabled = true;
+
+                    try {
+                        const formData = new FormData();
+                        formData.append('type', options.type);
+
+                        const payload = await postForm(options.lastUploadPreviewUrl, formData);
+                        renderPreview(payload);
+                        state.previewReady = true;
+                        state.usingLastUpload = true;
+                        el.importButton.disabled = false;
+                        el.importButton.textContent = 'Import';
+                        if (statusEl) statusEl.textContent = 'Preview loaded from saved file.';
+                    } catch (err) {
+                        state.previewReady = false;
+                        state.usingLastUpload = false;
+                        showPreviewError();
+                        el.lastUploadToggle.checked = false;
+                        el.dropZone.style.display = '';
+                        if (statusEl) {
+                            statusEl.textContent = err.message || 'Could not load saved file.';
+                        }
+                    }
+                } else {
+                    // Toggle turned off — restore drop zone
+                    state.usingLastUpload = false;
+                    state.previewReady = false;
+                    el.dropZone.style.display = '';
+                    el.importButton.disabled = true;
+                    el.importButton.textContent = 'Import';
+                    if (statusEl) {
+                        statusEl.style.display = 'none';
+                        statusEl.textContent = '';
+                    }
+                    collapse();
+                    reset();
+                    showPlaceholder();
+                }
+            });
+        }
         if (options.openOnError) el.modal?.classList.add('open');
     }
 
@@ -446,7 +535,8 @@
         const activate = (tabId) => {
             state.activeTab = tabId;
             el.body.className = 'preview-tab-body preview-tab-body-scrollable';
-            el.body.innerHTML = tabId === 'errors' ? renderErrors() : renderCards();
+            // el.body.innerHTML = tabId === 'errors' ? renderErrors() : renderCards();
+            el.body.innerHTML = tabId === 'errors' ? renderErrors(state.previewData || {}) : renderCards();
             el.tabs.querySelectorAll('.year-tab-btn').forEach((button) => button.classList.toggle('active', button.dataset.id === tabId));
         };
 
@@ -515,10 +605,84 @@
         placeholder();
     }
 
+    function monthlyController(options) {
+        const state = { previewReady: false, selectedYear: null, selectedMonth: null };
+        const el = {
+            modal: qs('monthlyImportModal'),
+            form: qs('monthly-import-form'),
+            fileInput: qs('monthly-file-input'),
+            fileInfo: qs('monthly-file-info'),
+            fileName: qs('monthly-file-name'),
+            dropZone: qs('monthly-drop-zone'),
+            dropLabel: qs('monthly-drop-label'),
+            importButton: qs('monthly-import-btn'),
+            // Template Elements
+            tplYear: qs('tpl-year'),
+            tplMonth: qs('tpl-month'),
+            downloadBtn: qs('btn-download-template'),
+            // Hidden inputs for the form
+            uploadYear: qs('upload-year'),
+            uploadMonth: qs('upload-month'),
+        };
+
+        // 1. Template Download Logic
+        el.downloadBtn?.addEventListener('click', () => {
+            const yr = el.tplYear.value;
+            const mo = el.tplMonth.value;
+            window.location.href = `${options.templateUrl}?year=${yr}&month=${mo}`;
+        });
+
+        // 2. DropZone & File Selection
+        attachDropZone(el.dropZone, el.fileInput, (file) => {
+            el.dropLabel.textContent = 'Template loaded';
+            el.fileInfo.style.display = 'flex';
+            el.fileName.textContent = file.name;
+
+            // Sync the hidden form fields with the template selection 
+            // (Assumes user fills template for the month they just selected)
+            el.uploadYear.value = el.tplYear.value;
+            el.uploadMonth.value = el.tplMonth.value;
+
+            state.previewReady = true;
+            el.importButton.disabled = false;
+        });
+
+        // 3. Clear File
+        qs('clearMonthlyFile')?.addEventListener('click', () => {
+            el.fileInput.value = '';
+            el.dropLabel.textContent = 'Drop filled template here';
+            el.fileInfo.style.display = 'none';
+            el.importButton.disabled = true;
+            state.previewReady = false;
+        });
+
+        // 4. Final Submit
+        el.form?.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            if (!state.previewReady) return;
+
+            const formData = new FormData(el.form);
+            try {
+                el.importButton.disabled = true;
+                el.importButton.innerHTML = `${icons.spinner}<span>Importing...</span>`;
+
+                await postForm(el.form.action, formData);
+                window.location.reload();
+            } catch (error) {
+                window.alert(error.message || 'Monthly import failed.');
+                el.importButton.disabled = false;
+                el.importButton.textContent = 'Import Payments';
+            }
+        });
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
         bindModal('importModal', 'openYearImportModal', ['closeYearImportModal', 'closeYearImportModalFooter']);
         bindModal('expenditureImportModal', 'openExpenditureImportModal', ['closeExpenditureImportModal', 'closeExpenditureImportModalFooter']);
+        bindModal('monthlyImportModal', 'openMonthlyImportModal', ['closeMonthlyModal', 'closeMonthlyModalX']);
+
         if (config.yearImport) yearController(config.yearImport);
         if (config.expenditureImport) expenditureController(config.expenditureImport);
+        if (config.monthlyImport) monthlyController(config.monthlyImport);
     });
 })();

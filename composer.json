@@ -46,29 +46,27 @@
             "@php artisan vendor:publish --tag=laravel-assets --ansi --force",
             "@php artisan native:install --force --quiet --publish"
         ],
-        "post-root-package-install": [
-            "@php -r \"file_exists('.env') || copy('.env.example', '.env');\""
-        ],
-        "post-create-project-cmd": [
-            "@php artisan key:generate --ansi",
-            "@php -r \"file_exists('database/database.sqlite') || touch('database/database.sqlite');\"",
-            "@php artisan migrate --ansi"
-        ],
-        "watch": [
-            "@php artisan optimize:clear",
-            "@php artisan native:serve"
-        ],
-        "native:postBuild": [
-            "@php artisan optimize:clear",
-            "@php artisan optimize",
-            "@php artisan migrate:fresh",
-            "@php artisan db:seed --class=ExpenseCategorySeeder",
-            "@php artisan native:install --force --quiet --publish",
-            "@php artisan native:migrate:fresh --seed"
-        ],
         "native:dev": [
             "Composer\\Config::disableProcessTimeout",
+            "php artisan optimize:clear",
             "npx concurrently -k -c \"#93c5fd,#c4b5fd\" \"php artisan native:run --no-interaction\" \"npm run dev\" --names=app,vite"
+        ],
+        "native:fresh": [
+            "Composer\\Config::disableProcessTimeout",
+            "php artisan migrate:fresh",
+            "php artisan db:seed --class=ExpenseCategorySeeder",
+            "php artisan native:migrate:fresh",
+            "php artisan native:seed --class=ExpenseCategorySeeder",
+            "@native:dev"
+        ],
+        "native:dist": [
+            "Composer\\Config::disableProcessTimeout",
+            "npm run build",
+            "php artisan optimize",
+            "php artisan native:build",
+            "@php -r \"echo '\\e[32m--------------------------------------------------\\e[0m' . PHP_EOL;\"",
+            "@php -r \"echo '\\e[32m   BUILD COMPLETE: Check the /dist folder!        \\e[0m' . PHP_EOL;\"",
+            "@php -r \"echo '\\e[32m--------------------------------------------------\\e[0m' . PHP_EOL;\""
         ]
     },
     "extra": {

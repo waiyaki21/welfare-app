@@ -61,7 +61,8 @@ return [
     'cleanup_env_keys' => [
         'AWS_*',
         'AZURE_*',
-        'GITHUB_*',
+        'GITHUB_*', // Strips your GitHub Token
+        'GOOGLE_*', // Strips your Client ID and Secret
         'DO_SPACES_*',
         '*_SECRET',
         'BIFROST_*',
@@ -81,11 +82,18 @@ return [
      * You may use glob / wildcard patterns here.
      */
     'cleanup_exclude_files' => [
-        'build',
-        'temp',
-        'content',
-        'node_modules',
-        '*/tests',
+        'node_modules',         // Heavily bloats the app; not needed after npm run build
+        'storage/logs/*',       // Don't ship your local error logs
+        'storage/framework/cache/*',
+        'storage/framework/sessions/*',
+        'storage/framework/views/*',
+        'tests',                // No need for Pest/PHPUnit files in production
+        '.git',                 // Removes your entire git history from the bundle
+        '.env.example',
+        'phpunit.xml',
+        'auth.json',            // Very important if you have private composer credentials
+        'database/database.sqlite', // Don't ship your local dev data (the app creates its own)
+        '.phpunit.cache',
     ],
 
     /**
@@ -104,7 +112,7 @@ return [
          * Supported: "github", "s3", "spaces"
          * Note: The "s3" provider is compatible with S3-compatible services like Cloudflare R2.
          */
-        'default' => env('NATIVEPHP_UPDATER_PROVIDER', 'spaces'),
+        'default' => env('NATIVEPHP_UPDATER_PROVIDER', 'github'),
 
         'providers' => [
             'github' => [
@@ -113,8 +121,8 @@ return [
                 'owner' => 'waiyaki21',
                 // It is safer to keep the token in your .env file
                 'token' => env('GITHUB_TOKEN'),
-                'vPrefixedTagName' => env('GITHUB_V_PREFIXED_TAG_NAME', true),
-                'private' => env('GITHUB_PRIVATE', false),
+                'vPrefixedTagName' => true,
+                'private' => true,
                 'autoupdate_token' => env('GITHUB_AUTOUPDATE_TOKEN'), // Read-only token used by the updater for private repos
                 'channel' => env('GITHUB_CHANNEL', 'latest'),
                 'releaseType' => env('GITHUB_RELEASE_TYPE', 'draft'),
@@ -164,11 +172,16 @@ return [
      * Define your own scripts to run before and after the build process.
      */
     'prebuild' => [
-        // 'npm run build',
+        'npm run build',            // Compiles your UI/Glassmorphism assets
+        'php artisan optimize',      // Caches routes/config for faster desktop boot
+        'php artisan migrate:fresh',
+        'php artisan db:seed --class=ExpenseCategorySeeder',
+        'php artisan native:migrate:fresh --seed',
     ],
 
     'postbuild' => [
         // 'rm -rf public/build',
+        'php artisan optimize:clear', // Returns your dev environment to a "fresh" state
     ],
 
     /**

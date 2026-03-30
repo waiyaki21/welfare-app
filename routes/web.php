@@ -18,6 +18,9 @@ Route::middleware('guest')->group(function () {
     Route::post('/login',   [AuthController::class, 'login'])->name('auth.login.post');
     Route::get('/register', [AuthController::class, 'showRegister'])->name('auth.register');
     Route::post('/register', [AuthController::class, 'register'])->name('auth.register.post');
+
+    Route::get('/auth/google',          [AuthController::class, 'redirectToGoogle'])->name('auth.google');
+    Route::get('/auth/google/callback', [AuthController::class, 'handleGoogleCallback'])->name('auth.google.callback');
 });
 
 // Logout (auth required)
@@ -103,4 +106,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/import/monthly',         [ImportController::class, 'storeMonthly'])->name('import.monthly.store');
     Route::post('/imports/preview/month',  [ImportController::class, 'previewMonthImport'])->name('imports.preview.month');
     Route::post('/imports/final/month',    [ImportController::class, 'finalMonthImport'])->name('imports.final.month');
+
+    // Import Last upload
+    Route::post('/import/preview-last', [ImportController::class, 'previewLastUpload'])->name('import.preview.last');
 });

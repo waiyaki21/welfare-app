@@ -2,21 +2,24 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AppSetting;
+use App\Models\BankBalance;
+use App\Models\Expenditure;
+use App\Models\Expense;
+use App\Models\ExpenseCategory;
 use App\Models\FinancialYear;
 use App\Models\Member;
-use App\Models\Payment;
-use App\Models\Expense;
 use App\Models\MemberFinancial;
-use App\Models\BankBalance;
-use App\Models\WelfareEvent;
-use App\Models\ExpenseCategory;
+use App\Models\Payment;
 use App\Models\User;
-use App\Models\AppSetting;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Http\Request;
+use App\Models\WelfareEvent;
 use App\Services\SpreadsheetExportService;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class FinancialYearController extends Controller
 {
@@ -142,8 +145,10 @@ class FinancialYearController extends Controller
             'financial_years'  => FinancialYear::count(),
             'payments'         => Payment::count(),
             'expenses'         => Expense::count(),
+            'expenditures'     => Expenditure::count(),
             'member_financials' => MemberFinancial::count(),
-            'users'            => User::count()
+            'users'            => User::count(),
+            'settings'         => AppSetting::count(),
         ];
 
         return view('financial-years.reset', compact('counts'));
@@ -162,7 +167,7 @@ class FinancialYearController extends Controller
         ]);
 
         DB::transaction(function () use ($resetUsers) {
-            // Hard delete everything — no soft deletes, no orphans left behind
+
             DB::statement('PRAGMA foreign_keys = OFF');
 
             Payment::query()->forceDelete();
@@ -173,37 +178,114 @@ class FinancialYearController extends Controller
             FinancialYear::query()->delete();
             Member::query()->delete();
             ExpenseCategory::query()->delete();
+            Expenditure::query()->delete();
 
             if ($resetUsers) {
                 User::query()->delete();
                 AppSetting::query()->delete();
+
+                // 🔥 Clear ALL cached settings
+                Cache::flush();
             }
 
             DB::statement('PRAGMA foreign_keys = ON');
 
-            // Reset all auto-increment counters so IDs start from 1 again
-            $tables = ['payments','expenses','bank_balances','welfare_events',
-                       'member_financials','financial_years','members','expense_categories'];
+            // Reset auto-increment IDs
+            $tables = [
+                'payments',
+                'expenses',
+                'bank_balances',
+                'welfare_events',
+                'member_financials',
+                'financial_years',
+                'members',
+                'expense_categories',
+                'expenditures'
+            ];
+
             if ($resetUsers) {
                 $tables[] = 'users';
                 $tables[] = 'app_settings';
             }
+
             foreach ($tables as $table) {
                 DB::statement("DELETE FROM sqlite_sequence WHERE name = '{$table}'");
             }
+
+            // 🔥 Delete uploaded files
+            Storage::deleteDirectory('imports');
         });
 
         if ($resetUsers) {
             Auth::logout();
             request()->session()->invalidate();
             request()->session()->regenerateToken();
+
             return redirect()->route('auth.login')
-                ->with('success', 'Full reset complete. All data and user accounts cleared.');
+                ->with('success', 'Full reset complete. All data, settings, and files cleared.');
         }
 
         return redirect()->route('dashboard')
-            ->with('success', 'Database reset complete. All association data cleared.');
+            ->with('success', 'Database and files reset complete.');
     }
+
+    // public function resetExecute(Request $request)
+    // {
+    //     $resetUsers = $request->boolean('reset_users');
+
+    //     $expectedWord = $resetUsers ? 'RESET ALL' : 'RESET';
+
+    //     $request->validate([
+    //         'confirm_text' => ['required', "in:{$expectedWord}"],
+    //     ], [
+    //         'confirm_text.in' => "You must type {$expectedWord} (all caps) to confirm.",
+    //     ]);
+
+    //     DB::transaction(function () use ($resetUsers) {
+    //         // Hard delete everything — no soft deletes, no orphans left behind
+    //         DB::statement('PRAGMA foreign_keys = OFF');
+
+    //         Payment::query()->forceDelete();
+    //         Expense::query()->delete();
+    //         BankBalance::query()->delete();
+    //         WelfareEvent::query()->delete();
+    //         MemberFinancial::query()->delete();
+    //         FinancialYear::query()->delete();
+    //         Member::query()->delete();
+    //         ExpenseCategory::query()->delete();
+
+    //         if ($resetUsers) {
+    //             User::query()->delete();
+    //             AppSetting::query()->delete();
+    //             Cache::flush(); // simplest + safest
+    //             Storage::deleteDirectory('imports');
+    //         }
+
+    //         DB::statement('PRAGMA foreign_keys = ON');
+
+    //         // Reset all auto-increment counters so IDs start from 1 again
+    //         $tables = ['payments','expenses','bank_balances','welfare_events',
+    //                    'member_financials','financial_years','members','expense_categories'];
+    //         if ($resetUsers) {
+    //             $tables[] = 'users';
+    //             $tables[] = 'app_settings';
+    //         }
+    //         foreach ($tables as $table) {
+    //             DB::statement("DELETE FROM sqlite_sequence WHERE name = '{$table}'");
+    //         }
+    //     });
+
+    //     if ($resetUsers) {
+    //         Auth::logout();
+    //         request()->session()->invalidate();
+    //         request()->session()->regenerateToken();
+    //         return redirect()->route('auth.login')
+    //             ->with('success', 'Full reset complete. All data and user accounts cleared.');
+    //     }
+
+    //     return redirect()->route('dashboard')
+    //         ->with('success', 'Database reset complete. All association data cleared.');
+    // }
 
     // ── Export ───────────────────────────────────────────────────────────────
 

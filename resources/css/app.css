@@ -1,8 +1,16 @@
-@import './imports.css';
+@import "tailwindcss";
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/* If you still want to keep your imports.css */
+@import "./page.css";
+@import "./imports.css";
+
+/* To use Flowbite with Tailwind v4, you import it as a theme plugin */
+@import "flowbite/src/themes/default";
+@plugin "flowbite/plugin";
+@source "../../node_modules/flowbite";
+
+/* input.css */
+@custom-variant dark (&:where(.dark, .dark *));
 
 @layer base {
     :root {

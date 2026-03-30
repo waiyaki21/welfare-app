@@ -20,6 +20,7 @@ class ProfileController extends Controller
             'theme'                 => AppSetting::theme(),
             'yearlyImportEnabled'   => AppSetting::yearlyImportEnabled(),
             'monthlyImportEnabled'  => AppSetting::monthlyImportEnabled(),
+            'expenditureImportEnabled' => AppSetting::expenditureImportEnabled()
         ]);
     }
 
