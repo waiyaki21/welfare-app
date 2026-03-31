@@ -11,20 +11,20 @@
 @section('content')
 <div class="card mb-6">
     <div class="card-head">
-        <div class="card-title">{{ $expenditure->name }}</div>
+        <div class="card-title">{{ $expenditure->narration ?? 'Unspecified' }}</div>
         <span class="badge badge-mid">FY {{ $expenditure->financialYear->year }}</span>
     </div>
     <div class="card-body">
         <div class="stats-grid" style="margin-bottom:0;">
             <div class="stat">
-                <div class="stat-label">Monthly Entries</div>
-                <div class="stat-value">{{ number_format($monthlyRows->count()) }}</div>
-                <div class="stat-sub">Breakdown listed below</div>
+                <div class="stat-label">Entries</div>
+                <div class="stat-value">{{ number_format($groupRows->count()) }}</div>
+                <div class="stat-sub">Narration group</div>
             </div>
             <div class="stat green">
                 <div class="stat-label">Total Amount (KES)</div>
                 <div class="stat-value">{{ number_format($total, 2) }}</div>
-                <div class="stat-sub">{{ $expenditure->name }}</div>
+                <div class="stat-sub">{{ $expenditure->narration ?? 'Unspecified' }}</div>
             </div>
         </div>
     </div>
@@ -32,25 +32,25 @@
 
 <div class="card">
     <div class="card-head">
-        <div class="card-title">Monthly Breakdown</div>
+        <div class="card-title">Expenditures in Narration</div>
     </div>
     <div class="card-body" style="padding:0;">
         <table>
             <thead>
                 <tr>
-                    <th>Month</th>
+                    <th>Expense</th>
                     <th class="num">Amount (KES)</th>
                 </tr>
             </thead>
             <tbody>
-                @forelse($monthlyBreakdown as $row)
+                @forelse($groupRows as $row)
                     <tr>
-                        <td>{{ $row['month_name'] }}</td>
-                        <td class="num">{{ number_format($row['amount'], 2) }}</td>
+                        <td>{{ $row->name }}</td>
+                        <td class="num">{{ number_format($row->amount, 2) }}</td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="2" class="text-mid">No monthly rows found.</td>
+                        <td colspan="2" class="text-mid">No expenditures found.</td>
                     </tr>
                 @endforelse
             </tbody>

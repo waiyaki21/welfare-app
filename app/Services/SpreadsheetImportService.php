@@ -64,6 +64,8 @@ class SpreadsheetImportService
         'SAGANA' => 'sagana',
     ];
 
+    private array $sheetErrors = [];
+
     public function preview(string $filePath, array $options = []): array
     {
         return $this->runImport($filePath, false, $options);
@@ -76,8 +78,10 @@ class SpreadsheetImportService
 
     private function runImport(string $filePath, bool $persist, array $options = []): array
     {
+        $this->sheetErrors = [];
         $results = $this->initialResults($persist ? 'final' : 'preview');
         $removals = $this->buildRemovalLookups($options);
+        $memberOverrides = $this->normalizeMemberOverrides($options['member_overrides'] ?? []);
         $reader = IOFactory::createReaderForFile($filePath);
         if (method_exists($reader, 'setReadDataOnly')) {
             $reader->setReadDataOnly(true);
@@ -99,7 +103,7 @@ class SpreadsheetImportService
             ->get()
             ->keyBy('phone')
             ->map(function ($item) {
-                return ['name' => $item->name, 'total' => $item->total];
+                return ['name' => $item->name, 'total' => $item->total, 'phone' => $item->phone];
             })
             ->toArray();
 
@@ -110,7 +114,7 @@ class SpreadsheetImportService
             }
 
             try {
-                $parsed = $this->parseSheet($sheet, $year, $memberLookup, $duplicatePhonesInDb, $filePath);
+                $parsed = $this->parseSheet($sheet, $year, $memberLookup, $duplicatePhonesInDb, $filePath, $memberOverrides, $members);
                 $this->mergePreviewData($results, $parsed, !$persist);
 
                 if ($persist) {
@@ -121,13 +125,15 @@ class SpreadsheetImportService
 
                 $results['summary']['sheets_processed']++;
             } catch (\App\Exceptions\SheetParseException $e) {
-                // Friendly error message
+                // Non-critical sheet warnings still surface in preview results.
                 $results['errors'][] = "Sheet [{$sheet->getTitle()}]: {$e->getMessage()}";
-                // Optionally: stop processing further sheets if needed
                 break;
             } catch (\Throwable $e) {
-                // Generic fallback for unexpected errors
-                $results['errors'][] = "Sheet [{$sheet->getTitle()}]: Unexpected error: {$e->getMessage()}";
+                if ($this->isStructuredImportException($e)) {
+                    throw $e;
+                }
+                $this->addSheetError("Sheet [{$sheet->getTitle()}]: Unexpected error: {$e->getMessage()}");
+                $this->throwCriticalImport('Spreadsheet could not be processed');
             }
         }
 
@@ -159,21 +165,21 @@ class SpreadsheetImportService
         int $year,
         array $memberLookup,
         array $duplicatePhonesInDb,
-        string $filePath
+        string $filePath,
+        array $memberOverrides,
+        Collection $allMembers
     ): array {
         $rows = $this->sheetRowsAsCollection($sheet);
         [$headerRow, $colMap, $monthCols] = $this->detectHeaders($rows);
         if ($headerRow === null) {
-            throw new \App\Exceptions\SheetParseException(
-                'Could not find member header row. Please check your spreadsheet format.'
-            );
+            $this->addSheetError("Sheet [{$sheet->getTitle()}]: Could not find member header row. Please check your spreadsheet format.");
+            $this->throwCriticalImport('Spreadsheet could not be processed');
         }
 
         $totalRowIndex = $this->detectTotalRowIndex($rows, $headerRow, $colMap);
         if ($totalRowIndex >= $rows->count()) {
-            throw new \App\Exceptions\SheetParseException(
-                'No totals row detected in the spreadsheet. Please check your file format.'
-            );
+            $this->addSheetError("Sheet [{$sheet->getTitle()}]: No totals row detected in the spreadsheet. Please check your file format.");
+            $this->throwCriticalImport('Spreadsheet could not be processed');
         }
 
         $expenseOnlyRange = $this->locateExpenseOnlyRange($rows, $colMap);
@@ -183,11 +189,18 @@ class SpreadsheetImportService
         // --- Track duplicates in the sheet ---
         $nameRows = [];
         $phoneRows = [];
+        $sheetMemberKeys = [];
         foreach ($memberRows as $rowIndex => $row) {
             if (!$this->isMemberRow($row, $colMap)) continue;
 
-            $name = $this->normaliseName((string) $row->get($colMap['name'] ?? -1, ''));
-            $phone = $this->cleanPhone($row->get($colMap['phone'] ?? -1, ''));
+            $rowNumber = $rowIndex + 1;
+            $override = $memberOverrides[$rowNumber] ?? null;
+            $name = $override !== null
+                ? $this->normaliseName((string) ($override['name'] ?? ''))
+                : $this->normaliseName((string) $row->get($colMap['name'] ?? -1, ''));
+            $phone = $override !== null
+                ? $this->cleanPhone($override['phone'] ?? null)
+                : $this->cleanPhone($row->get($colMap['phone'] ?? -1, ''));
 
             if ($name) {
                 $key = strtolower($name);
@@ -196,7 +209,11 @@ class SpreadsheetImportService
             if ($phone) {
                 $phoneRows[$phone][] = $rowIndex + 1;
             }
+
+            $sheetMemberKeys[$this->memberLookupKey($name, $phone)] = true;
         }
+
+        $fuzzyCandidates = $this->buildFuzzyCandidates($allMembers, $sheetMemberKeys);
 
         $parsedMembers = [];
         $membersData = [
@@ -210,17 +227,25 @@ class SpreadsheetImportService
             'total_count' => 0,
         ];
         $monthlyInfo = $this->initialMonthlyPaymentsInfo();
-        $sheetErrors = [];
+        $rowErrors = [];
         $failedRows = 0;
 
         foreach ($memberRows as $rowIndex => $row) {
             if (!$this->isMemberRow($row, $colMap)) continue;
 
-            $name = $this->normaliseName((string) $row->get($colMap['name'] ?? -1, ''));
-            $phone = $this->cleanPhone($row->get($colMap['phone'] ?? -1, ''));
             $rowNumber = $rowIndex + 1;
+            $override = $memberOverrides[$rowNumber] ?? null;
+            $name = $override !== null
+                ? $this->normaliseName((string) ($override['name'] ?? ''))
+                : $this->normaliseName((string) $row->get($colMap['name'] ?? -1, ''));
+            $phone = $override !== null
+                ? $this->cleanPhone($override['phone'] ?? null)
+                : $this->cleanPhone($row->get($colMap['phone'] ?? -1, ''));
             $errors = [];
             $conflicts = ['sheet_rows' => [], 'database_member' => null];
+            $hasSheetDuplicate = false;
+            $hasDbDuplicate = false;
+            $hasGeneralError = false;
 
             // --- Skip expense-only rows ---
             if ($this->isWithinExpenseOnlyRange($rowIndex, $expenseOnlyRange)) {
@@ -231,7 +256,7 @@ class SpreadsheetImportService
                     'phone' => $phone,
                     'errors' => ['This row belongs to the expense section and cannot be imported as a member.'],
                 ];
-                $sheetErrors[] = "{$name} row was skipped because it belongs to the expense section.";
+                $rowErrors[] = "{$name} row was skipped because it belongs to the expense section.";
                 continue;
             }
 
@@ -240,11 +265,13 @@ class SpreadsheetImportService
                 $duplicateRows = array_diff($nameRows[strtolower($name)], [$rowNumber]);
                 $errors[] = "Name '{$name}' appears multiple times in the sheet (also in rows: " . implode(', ', $duplicateRows) . ").";
                 $conflicts['sheet_rows'] = array_merge($conflicts['sheet_rows'], $duplicateRows);
+                $hasSheetDuplicate = true;
             }
 
             // --- Missing phone ---
             if (!$phone) {
                 $errors[] = "Phone number is missing for '{$name}'.";
+                $hasGeneralError = true;
             }
 
             // --- Sheet phone duplicates ---
@@ -252,6 +279,7 @@ class SpreadsheetImportService
                 $duplicateRows = array_diff($phoneRows[$phone], [$rowNumber]);
                 $errors[] = "Phone {$phone} is duplicated in the sheet (also in rows: " . implode(', ', $duplicateRows) . ").";
                 $conflicts['sheet_rows'] = array_merge($conflicts['sheet_rows'], $duplicateRows);
+                $hasSheetDuplicate = true;
             }
 
             // --- Database phone duplicates ---
@@ -263,11 +291,18 @@ class SpreadsheetImportService
                 } else {
                     $errors[] = "Phone {$phone} already exists in database as: '{$existingName}'";
                 }
-                $conflicts['database_member'] = $existingName;
+                $conflicts['database_member'] = [
+                    'name' => $existingName,
+                    'phone' => $existingMember['phone'] ?? $phone,
+                ];
+                $hasDbDuplicate = true;
             }
 
             $member = $memberLookup[$this->memberLookupKey($name, $phone)] ?? null;
             $status = $member ? 'existing' : 'new';
+            $possibleMatch = $status === 'new'
+                ? $this->findPossibleMatch($name, $phone, $fuzzyCandidates)
+                : null;
 
             // --- Monthly payments ---
             $payments = [];
@@ -298,6 +333,8 @@ class SpreadsheetImportService
                 'name' => $name,
                 'phone' => $phone,
                 'status' => $status,
+                'possible_match' => $possibleMatch,
+                'error_type' => $this->resolveErrorType($hasSheetDuplicate, $hasDbDuplicate, $hasGeneralError || !empty($errors)),
                 'contributions_brought_forward' => $this->toFloat($row->get($colMap['bf'] ?? -1, 0)),
                 'contributions_carried_forward' => $this->toFloat($row->get($colMap['cf'] ?? -1, 0)),
                 'total_welfare' => $this->toFloat($row->get($colMap['welfare'] ?? -1, 0)),
@@ -328,11 +365,12 @@ class SpreadsheetImportService
                     'row' => $rowNumber,
                     'name' => $name,
                     'phone' => $phone,
+                    'error_type' => $this->resolveErrorType($hasSheetDuplicate, $hasDbDuplicate, $hasGeneralError || !empty($errors)),
                     'errors' => $errors,
                     'conflicts' => $conflicts,
                 ];
                 foreach ($errors as $error) {
-                    $sheetErrors[] = $error;
+                    $rowErrors[] = $error;
                 }
             }
 
@@ -342,6 +380,8 @@ class SpreadsheetImportService
                 'phone' => $phone,
                 'matched_member_id' => $member?->id,
                 'status' => $status,
+                'possible_match' => $possibleMatch,
+                'error_type' => $this->resolveErrorType($hasSheetDuplicate, $hasDbDuplicate, $hasGeneralError || !empty($errors)),
                 'errors' => $errors,
                 'conflicts' => $conflicts,
                 'financial' => [
@@ -358,7 +398,7 @@ class SpreadsheetImportService
         }
 
         [$expensesRows, $bankClosing, $expenseErrors] = $this->parseBottomRows($rows, $totalRowIndex, $monthCols, $colMap);
-        $sheetErrors = array_merge($sheetErrors, $expenseErrors);
+        $rowErrors = array_merge($rowErrors, $expenseErrors);
         $totalsFromRow = $this->extractTotalsFromRow($rows->get($totalRowIndex), $colMap, $monthCols);
 
         $expensesInfo = [
@@ -392,7 +432,7 @@ class SpreadsheetImportService
             ],
             'bank_closing' => $bankClosing,
             'failed_rows' => $failedRows,
-            'errors' => $sheetErrors,
+            'errors' => $rowErrors,
         ];
     }
 
@@ -1038,10 +1078,105 @@ class SpreadsheetImportService
         return strtolower($this->normaliseName($name)) . '|' . ($this->cleanPhone($phone) ?? '');
     }
 
+    private function buildFuzzyCandidates(Collection $members, array $sheetMemberKeys): array
+    {
+        $candidates = [];
+        foreach ($members as $member) {
+            $key = $this->memberLookupKey($member->name, $member->phone);
+            if (isset($sheetMemberKeys[$key])) {
+                continue;
+            }
+
+            $candidates[] = [
+                'member' => $member,
+                'name' => $this->normalizeMatchName($member->name),
+                'phone' => $this->normalizeMatchPhone($member->phone),
+            ];
+        }
+
+        return $candidates;
+    }
+
+    private function findPossibleMatch(string $name, ?string $phone, array $candidates): ?array
+    {
+        if (empty($candidates)) {
+            return null;
+        }
+
+        $best = null;
+        $bestScore = 0.0;
+
+        foreach ($candidates as $candidate) {
+            $nameScore = $this->scoreNameMatch($name, $candidate['name'] ?? '');
+            $phoneScore = $this->scorePhoneMatch($phone, $candidate['phone'] ?? '');
+            $finalScore = ($nameScore * 0.7) + ($phoneScore * 0.3);
+
+            if ($finalScore > $bestScore) {
+                $bestScore = $finalScore;
+                $best = [
+                    'member' => [
+                        'id' => $candidate['member']->id,
+                        'name' => $candidate['member']->name,
+                        'phone' => $candidate['member']->phone,
+                    ],
+                    'name_match' => round($nameScore),
+                    'phone_match' => round($phoneScore),
+                    'final_match' => round($finalScore),
+                ];
+            }
+        }
+
+        if ($bestScore < 65) {
+            return null;
+        }
+
+        return $best;
+    }
+
+    private function scoreNameMatch(string $left, string $right): float
+    {
+        $left = $this->normalizeMatchName($left);
+        $right = $this->normalizeMatchName($right);
+        if ($left === '' || $right === '') {
+            return 0.0;
+        }
+
+        similar_text($left, $right, $percent);
+        return (float) $percent;
+    }
+
+    private function scorePhoneMatch(?string $left, ?string $right): float
+    {
+        $left = $this->normalizeMatchPhone($left);
+        $right = $this->normalizeMatchPhone($right);
+        if ($left === '' || $right === '') {
+            return 0.0;
+        }
+
+        $maxLen = max(strlen($left), strlen($right));
+        if ($maxLen === 0) {
+            return 0.0;
+        }
+
+        $distance = levenshtein($left, $right);
+        $score = (1 - ($distance / $maxLen)) * 100;
+        return max(0.0, (float) $score);
+    }
+
     // TODO: CHECK FOR FULL STOPS IN THE NAME AND ALSO IF THE PHONE NUMBER IS DUPLICATED ASSIGN A NEW UNIQUE PHONE NUMBER AND WHEN THE NEXT UPLOAD COMES ALONG WITH A NEW PHONE NUMBER LET THE UNIQUE PLACEHOLDER NUMBER BE REPLACED WITH A NEW VALUE
     private function normaliseName(string $name): string
     {
         return trim((string) preg_replace('/\s+/', ' ', $name));
+    }
+
+    private function normalizeMatchName(string $name): string
+    {
+        return strtolower($this->normaliseName($name));
+    }
+
+    private function normalizeMatchPhone(?string $value): string
+    {
+        return (string) ($this->cleanPhone($value) ?? '');
     }
 
     private function cleanPhone($value): ?string
@@ -1069,6 +1204,48 @@ class SpreadsheetImportService
             'payments' => array_fill_keys($options['removed_payments'] ?? [], true),
             'expenses' => array_fill_keys($options['removed_expenses'] ?? [], true),
         ];
+    }
+
+    private function normalizeMemberOverrides(array $overrides): array
+    {
+        $map = [];
+        foreach ($overrides as $override) {
+            if (!is_array($override)) {
+                continue;
+            }
+
+            $row = (int) ($override['row'] ?? 0);
+            if ($row <= 0) {
+                continue;
+            }
+
+            $name = $this->normaliseName((string) ($override['name'] ?? ''));
+            $phone = $this->cleanPhone($override['phone'] ?? null);
+
+            $map[$row] = [
+                'name' => $name,
+                'phone' => $phone,
+            ];
+        }
+
+        return $map;
+    }
+
+    private function resolveErrorType(bool $hasSheetDuplicate, bool $hasDbDuplicate, bool $hasGeneralError): ?string
+    {
+        if ($hasDbDuplicate) {
+            return 'db_duplicate';
+        }
+
+        if ($hasSheetDuplicate) {
+            return 'sheet_duplicate';
+        }
+
+        if ($hasGeneralError) {
+            return 'general';
+        }
+
+        return null;
     }
 
     private function memberRemovalKey(array $memberRow): string
@@ -1158,5 +1335,29 @@ class SpreadsheetImportService
             'total_payments' => $payments,
             'total_investments' => $investment
         ];
+    }
+
+    private function addSheetError(string $message): void
+    {
+        $this->sheetErrors[] = $message;
+    }
+
+    private function throwCriticalImport(string $message): void
+    {
+        $payload = [
+            'status' => 'error',
+            'message' => $message,
+            'errors' => $this->sheetErrors,
+        ];
+
+        throw new \Exception(json_encode($payload));
+    }
+
+    private function isStructuredImportException(\Throwable $e): bool
+    {
+        $decoded = json_decode($e->getMessage(), true);
+        return is_array($decoded)
+            && ($decoded['status'] ?? null) === 'error'
+            && array_key_exists('errors', $decoded);
     }
 }

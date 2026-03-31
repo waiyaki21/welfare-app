@@ -24,8 +24,7 @@ class ExpenseController extends Controller
             ->when($monthFilter, fn ($q) => $q->where('month', $monthFilter))
             ->when($catFilter,   fn ($q) => $q->where('category', $catFilter))
             ->orderBy('month')->orderBy('category')
-            ->paginate(500)   // load all — client-side table handles paging
-            ->withQueryString();
+            ->get();
 
         $byCat = $fy
             ? Expense::where('financial_year_id', $fy->id)
@@ -43,8 +42,41 @@ class ExpenseController extends Controller
         $fyAll      = FinancialYear::orderByDesc('year')->get(['id', 'year']);
         $categories = ExpenseCategory::active()->orderBy('name')->get();
 
+        $expenseRows = $expenses->map(function ($expense) use ($categories) {
+            $catModel = $categories->firstWhere('slug', $expense->category);
+            $catName = $catModel ? $catModel->name : $expense->category_name;
+            $catColor = $catModel ? $catModel->color : '#fef3c7';
+            $catBadge = '<span class="badge exp-cat" style="background:' . e($catColor) . ';color:#1a1a1a;">' . e($catName) . '</span>';
+
+            $actions = '<div class="flex gap-1">'
+                . '<a href="' . route('expenses.edit', $expense) . '" class="btn btn-ghost btn-xs">Edit</a>'
+                . '<form method="POST" action="' . route('expenses.destroy', $expense) . '" onsubmit="return confirm(\'Delete this expense?\')">'
+                . csrf_field()
+                . method_field('DELETE')
+                . '<button type="submit" class="btn btn-ghost btn-xs" style="color:var(--rust)">Del</button>'
+                . '</form>'
+                . '</div>';
+
+            return [
+                'month' => $expense->month_name,
+                'category' => $catBadge,
+                'amount' => number_format($expense->amount),
+                'year' => $expense->financialYear?->year ?? $expense->financial_year_id,
+                'notes' => $expense->notes ?? '—',
+                'actions' => $actions,
+                '__values' => [
+                    'month' => $expense->month ?? 0,
+                    'category' => $catName,
+                    'amount' => $expense->amount ?? 0,
+                    'year' => $expense->financialYear?->year ?? 0,
+                    'notes' => $expense->notes ?? '',
+                    'actions' => '',
+                ],
+            ];
+        });
+
         return view('expenses.index', compact(
-            'expenses', 'years', 'selectedYear', 'monthFilter', 'catFilter',
+            'expenses', 'expenseRows', 'years', 'selectedYear', 'monthFilter', 'catFilter',
             'byCat', 'byMonth', 'yearTotal', 'fyAll', 'fy', 'categories'
         ));
     }
@@ -86,3 +118,4 @@ class ExpenseController extends Controller
             ->with('success', 'Expense deleted.');
     }
 }
+

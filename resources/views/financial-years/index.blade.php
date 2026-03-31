@@ -79,13 +79,15 @@
     </div>
 
     <div class="card-body" style="padding:16px 20px;">
-        <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;">
             @php
                 $items = [
                     ['Contributions',  number_format($fy->total_contrib),  null],
                     ['Total Welfare',  number_format($fy->total_welfare),  null],
                     ['Net Investment', number_format($fy->total_invest),   $fy->total_invest >= 0 ? 'var(--leaf)' : 'var(--rust)'],
                     ['Expenses',       number_format($fy->total_expenses), 'var(--rust)'],
+                    ['Expenditures',   number_format($fy->expenditures_total), 'var(--ink)'],
+                    ['Exp. Entries',   number_format($fy->expenditures_count), null],
                     ['In Surplus',     $fy->surplus_count . ' members',    'var(--leaf)'],
                     ['In Deficit',     $fy->deficit_count . ' members',    $fy->deficit_count > 0 ? 'var(--rust)' : 'var(--mid)'],
                 ];
@@ -105,6 +107,7 @@
             <a href="{{ route('payments.index', ['year' => $fy->year]) }}" class="btn btn-ghost btn-xs">Payments</a>
             <a href="{{ route('expenses.index', ['year' => $fy->year]) }}" class="btn btn-ghost btn-xs">Expenses</a>
             <a href="{{ route('members.index',  ['year' => $fy->year]) }}" class="btn btn-ghost btn-xs">Members</a>
+            <a href="{{ route('expenditures.index',  ['year' => $fy->year]) }}" class="btn btn-ghost btn-xs">Expenditures</a>
         </div>
     </div>
 </div>

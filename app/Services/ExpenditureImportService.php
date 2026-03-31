@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\Expenditure;
 use App\Models\FinancialYear;
-use App\Models\Payment;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
@@ -14,21 +13,6 @@ use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 class ExpenditureImportService
 {
     private const TOTAL_ROW_PATTERN = '/\b(grand total|totals|total)\b/i';
-
-    private const MONTH_ALIASES = [
-        1 => ['JANUARY', 'JAN'],
-        2 => ['FEBRUARY', 'FEB'],
-        3 => ['MARCH', 'MAR'],
-        4 => ['APRIL', 'APR'],
-        5 => ['MAY'],
-        6 => ['JUNE', 'JUN'],
-        7 => ['JULY', 'JUL'],
-        8 => ['AUGUST', 'AUG'],
-        9 => ['SEPTEMBER', 'SEP', 'SEPT'],
-        10 => ['OCTOBER', 'OCT'],
-        11 => ['NOVEMBER', 'NOV'],
-        12 => ['DECEMBER', 'DEC'],
-    ];
 
     public function preview(string $filePath, int $year): array
     {
@@ -53,10 +37,10 @@ class ExpenditureImportService
                 'year' => $year,
                 'total_records' => 0,
                 'total_amount' => 0.0,
-                'months_detected' => 0,
+                'narrations_detected' => 0,
             ],
             'expenditures' => [
-                'months' => [],
+                'narrations' => [],
                 'rows' => [],
                 'totals' => [
                     'records_count' => 0,
@@ -97,8 +81,8 @@ class ExpenditureImportService
 
                     Expenditure::create([
                         'financial_year_id' => $financialYear->id,
+                        'narration' => $row['narration'],
                         'name' => $row['name'],
-                        'month' => $row['month'],
                         'amount' => $row['amount'],
                     ]);
                     $results['summary']['records_created']++;
@@ -116,78 +100,72 @@ class ExpenditureImportService
     private function parseSheet(Worksheet $sheet, int $year): array
     {
         $rows = $this->sheetRowsAsCollection($sheet);
-        [$headerRow, $nameColumn, $monthCols] = $this->detectHeaders($rows);
-
-        if ($headerRow === null || $nameColumn === null || $monthCols === []) {
-            throw new \RuntimeException('Could not detect the expenditures table header.');
-        }
-
-        $groupedMonths = [];
-        foreach (Payment::MONTHS as $monthName) {
-            $groupedMonths[$monthName] = [
-                'records_count' => 0,
-                'total_amount' => 0.0,
-                'items' => [],
-            ];
-        }
-
+        $defaultNarration = $year === 2022 ? 'General' : null;
+        $currentNarration = $defaultNarration;
+        $groupedNarrations = [];
         $records = [];
         $errors = [];
         $failedRows = 0;
-        $emptyStreak = 0;
+        $seenNarrations = [];
 
-        foreach ($rows->slice($headerRow + 1) as $rowIndex => $row) {
-            $name = trim((string) $row->get($nameColumn, ''));
-            $normalizedName = preg_replace('/\s+/', ' ', $name);
+        foreach ($rows as $rowIndex => $row) {
+            [$name, $amount, $nonEmptyCells] = $this->extractRowValues($row);
+            $normalizedName = preg_replace('/\s+/', ' ', trim((string) $name));
 
-            $hasMonthValue = false;
-            foreach ($monthCols as $colIndex) {
-                if (abs($this->toFloat($row->get($colIndex, 0))) > 0.01) {
-                    $hasMonthValue = true;
-                    break;
-                }
-            }
-
-            if ($normalizedName === '' && !$hasMonthValue) {
-                $emptyStreak++;
-                if ($emptyStreak >= 3) {
-                    break;
-                }
+            if ($this->isHeaderRow($row)) {
                 continue;
             }
-            $emptyStreak = 0;
+
+            if ($normalizedName === '' && $amount <= 0) {
+                $currentNarration = $defaultNarration;
+                continue;
+            }
 
             if ($normalizedName !== '' && preg_match(self::TOTAL_ROW_PATTERN, $normalizedName)) {
                 break;
             }
 
-            if ($normalizedName === '' && $hasMonthValue) {
+            if ($normalizedName === '' && $amount > 0) {
                 $failedRows++;
-                $errors[] = "Row " . ($rowIndex + 1) . " contains amounts but no expenditure name.";
+                $errors[] = "Row " . ($rowIndex + 1) . " contains an amount but no expenditure name.";
                 continue;
             }
 
-            foreach ($monthCols as $month => $colIndex) {
-                $amount = $this->toFloat($row->get($colIndex, 0));
-                if ($amount <= 0) {
-                    continue;
-                }
-
-                $monthName = Payment::MONTHS[$month] ?? (string) $month;
-                $record = [
-                    'row' => $rowIndex + 1,
-                    'year' => $year,
-                    'name' => $normalizedName,
-                    'month' => $month,
-                    'month_name' => $monthName,
-                    'amount' => $amount,
-                ];
-
-                $records[] = $record;
-                $groupedMonths[$monthName]['records_count']++;
-                $groupedMonths[$monthName]['total_amount'] += $amount;
-                $groupedMonths[$monthName]['items'][] = $record;
+            if ($normalizedName !== '' && $amount <= 0 && $nonEmptyCells === 1) {
+                $currentNarration = $normalizedName;
+                $seenNarrations[$normalizedName] = true;
+                continue;
             }
+
+            if ($normalizedName === '' || $amount <= 0) {
+                continue;
+            }
+
+            $recordNarration = $currentNarration ?? $defaultNarration;
+            if ($recordNarration) {
+                $seenNarrations[$recordNarration] = true;
+            }
+
+            $record = [
+                'row' => $rowIndex + 1,
+                'year' => $year,
+                'narration' => $recordNarration,
+                'name' => $normalizedName,
+                'amount' => $amount,
+            ];
+
+            $records[] = $record;
+            $groupKey = $recordNarration ?: 'Unspecified';
+            if (!isset($groupedNarrations[$groupKey])) {
+                $groupedNarrations[$groupKey] = [
+                    'records_count' => 0,
+                    'total_amount' => 0.0,
+                    'items' => [],
+                ];
+            }
+            $groupedNarrations[$groupKey]['records_count']++;
+            $groupedNarrations[$groupKey]['total_amount'] += $amount;
+            $groupedNarrations[$groupKey]['items'][] = $record;
         }
 
         return [
@@ -195,10 +173,10 @@ class ExpenditureImportService
                 'year' => $year,
                 'total_records' => count($records),
                 'total_amount' => (float) array_sum(array_column($records, 'amount')),
-                'months_detected' => count(array_filter($groupedMonths, fn(array $month) => $month['records_count'] > 0)),
+                'narrations_detected' => count($seenNarrations),
             ],
             'expenditures' => [
-                'months' => $groupedMonths,
+                'narrations' => $groupedNarrations,
                 'rows' => $records,
                 'totals' => [
                     'records_count' => count($records),
@@ -210,43 +188,19 @@ class ExpenditureImportService
         ];
     }
 
-    private function detectHeaders(Collection $rows): array
+    private function isHeaderRow(Collection $row): bool
     {
-        foreach ($rows as $rowIndex => $row) {
-            $upper = $row->map(fn($value) => strtoupper(trim((string) $value)))->values();
-            $monthCols = [];
-            $nameColumn = null;
-
-            foreach ($upper as $colIndex => $cell) {
-                if ($nameColumn === null && $cell !== '' && !preg_match(self::TOTAL_ROW_PATTERN, $cell) && $this->cellToMonth($cell) === null) {
-                    $nameColumn = $colIndex;
-                }
-
-                $month = $this->cellToMonth($cell);
-                if ($month !== null) {
-                    $monthCols[$month] = $colIndex;
-                }
-            }
-
-            if ($nameColumn !== null && count($monthCols) >= 2) {
-                return [$rowIndex, $nameColumn, $monthCols];
-            }
+        $values = $row->map(fn($value) => strtoupper(trim((string) $value)))->values();
+        $joined = $values->implode(' ');
+        if ($joined === '') {
+            return false;
         }
 
-        return [null, null, []];
-    }
+        $hasAmount = str_contains($joined, 'AMOUNT');
+        $hasNarration = str_contains($joined, 'NARRATION');
+        $hasExpense = str_contains($joined, 'EXPENSE');
 
-    private function cellToMonth(string $cell): ?int
-    {
-        foreach (self::MONTH_ALIASES as $month => $aliases) {
-            foreach ($aliases as $alias) {
-                if ($cell === $alias || str_contains($cell, $alias)) {
-                    return $month;
-                }
-            }
-        }
-
-        return null;
+        return $hasAmount && ($hasNarration || $hasExpense);
     }
 
     private function sheetRowsAsCollection(Worksheet $sheet): Collection
@@ -282,9 +236,34 @@ class ExpenditureImportService
     {
         return implode('|', [
             $row['row'] ?? '',
+            strtolower(trim((string) ($row['narration'] ?? ''))),
             strtolower(trim((string) ($row['name'] ?? ''))),
-            (string) ($row['month'] ?? ''),
             (string) round((float) ($row['amount'] ?? 0), 2),
         ]);
+    }
+
+    private function extractRowValues(Collection $row): array
+    {
+        $name = '';
+        $amount = 0.0;
+        $nonEmpty = 0;
+
+        foreach ($row as $cell) {
+            $raw = trim((string) $cell);
+            if ($raw !== '') {
+                $nonEmpty++;
+            }
+
+            if ($name === '' && $raw !== '' && !is_numeric($raw)) {
+                $name = $raw;
+            }
+
+            $numeric = $this->toFloat($cell);
+            if ($numeric > 0 && $amount <= 0) {
+                $amount = $numeric;
+            }
+        }
+
+        return [$name, $amount, $nonEmpty];
     }
 }

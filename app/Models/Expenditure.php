@@ -11,9 +11,9 @@ class Expenditure extends Model
 
     protected $fillable = [
         'financial_year_id',
+        'narration',
         'name',
         'amount',
-        'month',
     ];
 
     public function financialYear()
@@ -21,12 +21,14 @@ class Expenditure extends Model
         return $this->belongsTo(FinancialYear::class);
     }
 
-    public function getMonthNameAttribute(): string
+    public function getFormattedAmountAttribute(): string
     {
-        if (!$this->month) {
-            return '-';
-        }
-        return Payment::MONTHS[$this->month] ?? (string) $this->month;
+        return number_format((float) $this->amount, 2);
+    }
+
+    public function scopeGroupedByNarration($query)
+    {
+        return $query->orderByRaw('narration IS NULL, narration')
+            ->orderBy('name');
     }
 }
-

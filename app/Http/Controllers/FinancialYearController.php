@@ -25,12 +25,18 @@ class FinancialYearController extends Controller
 {
     public function index()
     {
-        $years = FinancialYear::orderByDesc('year')->get()->map(function ($fy) {
+        $years = FinancialYear::withCount('expenditures')
+            ->withSum('expenditures', 'amount')
+            ->orderByDesc('year')
+            ->get()
+            ->map(function ($fy) {
             $fy->member_count   = $fy->memberFinancials()->count();
             $fy->total_contrib  = (float) Payment::where('financial_year_id', $fy->id)->sum('amount');
             $fy->total_welfare  = (float) $fy->memberFinancials()->sum('total_welfare');
             $fy->total_invest   = (float) $fy->memberFinancials()->sum('total_investment');
             $fy->total_expenses = (float) Expense::where('financial_year_id', $fy->id)->sum('amount');
+            $fy->expenditures_count = (int) ($fy->expenditures_count ?? 0);
+            $fy->expenditures_total = (float) ($fy->expenditures_sum_amount ?? 0);
             $fy->surplus_count  = $fy->memberFinancials()->where('welfare_owing', '>=', 0)->count();
             $fy->deficit_count  = $fy->memberFinancials()->where('welfare_owing', '<', 0)->count();
             $fy->payment_count  = Payment::where('financial_year_id', $fy->id)->count();

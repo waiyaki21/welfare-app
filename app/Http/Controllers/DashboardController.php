@@ -15,6 +15,13 @@ class DashboardController extends Controller
     {
         $years        = FinancialYear::orderByDesc('year')->pluck('year');
         $selectedYear = (int) $request->get('year', $years->first() ?? date('Y'));
+        $minYearRaw   = Member::whereNotNull('joined_year')->min('joined_year');
+        $minYear      = $minYearRaw ? (int) $minYearRaw : (int) date('Y');
+        $maxYear      = (int) date('Y') + 1;
+        if ($minYear > $maxYear) {
+            $minYear = $maxYear;
+        }
+        $financialYears = FinancialYear::orderBy('year')->pluck('year');
 
         $fy = FinancialYear::where('year', $selectedYear)->first();
 
@@ -28,6 +35,9 @@ class DashboardController extends Controller
             return view('dashboard.index', [
                 'years'           => $years,
                 'selectedYear'    => $selectedYear,
+                'minYear'         => $minYear,
+                'maxYear'         => $maxYear,
+                'financialYears'  => $financialYears,
                 'fy'              => null,
                 'stats'           => [],
                 'monthlyTotals'   => [],
@@ -97,6 +107,9 @@ class DashboardController extends Controller
         return view('dashboard.index', compact(
             'years',
             'selectedYear',
+            'minYear',
+            'maxYear',
+            'financialYears',
             'fy',
             'stats',
             'monthlyTotals',

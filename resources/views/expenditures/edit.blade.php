@@ -25,19 +25,14 @@
                 <label class="form-label">Name <span style="color:var(--rust)">*</span></label>
                 <input type="text" name="name" class="form-control" value="{{ old('name', $expenditure->name) }}" required>
             </div>
+            <div class="form-group">
+                <label class="form-label">Narration (Optional)</label>
+                <input type="text" name="narration" class="form-control" value="{{ old('narration', $expenditure->narration) }}" placeholder="e.g. General, Operations">
+            </div>
             <div class="form-row">
                 <div class="form-group">
                     <label class="form-label">Amount (KES) <span style="color:var(--rust)">*</span></label>
                     <input type="number" name="amount" class="form-control" min="0.01" step="0.01" value="{{ old('amount', $expenditure->amount) }}" required>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Month</label>
-                    <select name="month" class="form-control">
-                        <option value="">-</option>
-                        @foreach(\App\Models\Payment::MONTHS as $n => $mn)
-                        <option value="{{ $n }}" {{ (string) old('month', $expenditure->month) === (string) $n ? 'selected' : '' }}>{{ $mn }}</option>
-                        @endforeach
-                    </select>
                 </div>
             </div>
             <div class="flex gap-3 mt-4">
@@ -49,4 +44,3 @@
 </div>
 </div>
 @endsection
-

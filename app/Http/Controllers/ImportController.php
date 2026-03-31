@@ -3,11 +3,19 @@
 namespace App\Http\Controllers;
 
 use App\Models\AppSetting;
+use App\Models\FinancialYear;
+use App\Models\Member;
 use App\Models\Payment;
 use App\Services\ExpenditureImportService;
 use App\Services\MonthlyImportService;
 use App\Services\SpreadsheetImportService;
 use Illuminate\Http\Request;
+use Native\Laravel\Facades\Notification as NativeNotification;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Border;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 class ImportController extends Controller
 {
@@ -21,7 +29,39 @@ class ImportController extends Controller
 
     public function show()
     {
-        return view('import.index');
+        try {
+            $years        = FinancialYear::orderByDesc('year')->pluck('year');
+            $selectedYear = (int) request()->get('year', $years->first() ?? date('Y'));
+            $minYearRaw   = Member::whereNotNull('joined_year')->min('joined_year');
+            $minYear      = $minYearRaw ? (int) $minYearRaw : (int) date('Y');
+            $maxYear      = (int) date('Y') + 1;
+            if ($minYear > $maxYear) {
+                $minYear = $maxYear;
+            }
+            $financialYears = FinancialYear::orderBy('year')->pluck('year');
+            $hasFinancialYears = FinancialYear::exists();
+
+            $importStates = [
+                'year' => AppSetting::importState('year'),
+                'month' => AppSetting::importState('month'),
+                'expenditure' => AppSetting::importState('expenditure'),
+            ];
+
+            $this->notifyImportLoad(true);
+
+            return view('imports.index', compact(
+                'years',
+                'selectedYear',
+                'minYear',
+                'maxYear',
+                'financialYears',
+                'hasFinancialYears',
+                'importStates'
+            ));
+        } catch (\Throwable $e) {
+            $this->notifyImportLoad(false);
+            throw $e;
+        }
     }
 
     public function store(Request $request)
@@ -50,6 +90,68 @@ class ImportController extends Controller
         ])->deleteFileAfterSend(true);
     }
 
+    public function expenditureTemplate(int $year)
+    {
+        $year = (int) $year;
+        if (!FinancialYear::where('year', $year)->exists()) {
+            abort(404);
+        }
+
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle("Expenditures {$year}");
+
+        $headers = ['Narration / Expense', 'Amount (KES)'];
+        foreach ($headers as $index => $label) {
+            $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($index + 1);
+            $sheet->setCellValue("{$col}1", $label);
+        }
+
+        $sheet->getStyle('A1:B1')->applyFromArray([
+            'font' => ['bold' => true, 'color' => ['argb' => 'FFD8F3DC'], 'size' => 10],
+            'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['argb' => 'FF1A3A2A']],
+            'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
+            'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN]],
+        ]);
+
+        $row = 2;
+        $sampleNarrations = ['General', 'Operations', 'Travel & Meetings'];
+        $sampleExpenses = [
+            'General' => ['Bank Charges', 'Office Supplies'],
+            'Operations' => ['Secretary Allowance', 'Audit Fees'],
+            'Travel & Meetings' => ['Transport', 'Venue & Meals'],
+        ];
+
+        foreach ($sampleNarrations as $narration) {
+            $sheet->setCellValue("A{$row}", $narration);
+            $sheet->getStyle("A{$row}:B{$row}")->applyFromArray([
+                'font' => ['bold' => true, 'color' => ['argb' => 'FF14532D']],
+                'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['argb' => 'FFD8F3DC']],
+            ]);
+            $row++;
+
+            foreach ($sampleExpenses[$narration] ?? [] as $expenseName) {
+                $sheet->setCellValue("A{$row}", $expenseName);
+                $sheet->setCellValue("B{$row}", 0);
+                $row++;
+            }
+
+            $row++;
+        }
+
+        $sheet->getColumnDimension('A')->setWidth(40);
+        $sheet->getColumnDimension('B')->setWidth(16);
+
+        $path = storage_path("app/exports/expenditures_template_{$year}.xlsx");
+        @mkdir(dirname($path), 0755, true);
+        (new Xlsx($spreadsheet))->save($path);
+
+        $filename = "Expenditures_Template_{$year}.xlsx";
+        return response()->download($path, $filename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ])->deleteFileAfterSend(true);
+    }
+
     // ── Monthly import ────────────────────────────────────────────────────────
 
     public function storeMonthly(Request $request)
@@ -69,19 +171,8 @@ class ImportController extends Controller
         try {
             $preview = $this->importer->preview($fullPath);
             return response()->json($preview);
-        } catch (\App\Exceptions\SheetParseException $e) {
-            // Return friendly error and HTTP 422
-            return response()->json([
-                'status' => 'error',
-                'message' => $e->getMessage(),   // friendly sheet parsing message
-            ], 422);
         } catch (\Throwable $e) {
-            // Fallback for unexpected errors
-            return response()->json([
-                'status' => 'error',
-                'message' => 'The spreadsheet could not be read',
-                'details' => $e->getMessage(),
-            ], 422);
+            return $this->previewErrorResponse($e, 'Spreadsheet could not be processed');
         } finally {
             @unlink($fullPath);
         }
@@ -111,11 +202,7 @@ class ImportController extends Controller
             $preview = $this->importer->preview($fullPath);
             return response()->json($preview);
         } catch (\Throwable $e) {
-            return response()->json([
-                'status'  => 'error',
-                'message' => 'The spreadsheet could not be read',
-                'details' => $e->getMessage(),
-            ], 422);
+            return $this->previewErrorResponse($e, 'Spreadsheet could not be processed');
         }
         // ✅ No finally @unlink — the saved file must not be deleted on preview
     }
@@ -123,6 +210,7 @@ class ImportController extends Controller
     public function finalYearImport(Request $request)
     {
         $useLastUpload = filter_var($request->input('use_last_upload'), FILTER_VALIDATE_BOOLEAN);
+        $memberOverrides = $this->decodeMemberOverrides($request->input('member_overrides'));
 
         if ($useLastUpload) {
             // ── Use the previously saved file from AppSetting ────────────────
@@ -161,6 +249,7 @@ class ImportController extends Controller
                 'removed_members'  => $this->decodeJsonArray($request->input('removed_members')),
                 'removed_payments' => $this->decodeJsonArray($request->input('removed_payments')),
                 'removed_expenses' => $this->decodeJsonArray($request->input('removed_expenses')),
+                'member_overrides' => $memberOverrides,
             ]);
 
             // Save/refresh last upload record only after a successful import
@@ -193,6 +282,25 @@ class ImportController extends Controller
             return response()->json(['status' => 'error', 'message' => $message], 422);
         }
         return redirect()->route('dashboard')->withErrors(['spreadsheet' => $message]);
+    }
+
+    private function previewErrorResponse(\Throwable $e, string $fallbackMessage)
+    {
+        $payload = json_decode($e->getMessage(), true);
+
+        if (is_array($payload) && ($payload['status'] ?? null) === 'error') {
+            return response()->json([
+                'status' => 'error',
+                'message' => $payload['message'] ?? $fallbackMessage,
+                'errors' => $payload['errors'] ?? [],
+            ], 422);
+        }
+
+        return response()->json([
+            'status' => 'error',
+            'message' => $fallbackMessage,
+            'errors' => [],
+        ], 422);
     }
 
     public function previewMonthImport(Request $request)
@@ -336,6 +444,41 @@ class ImportController extends Controller
         return array_values(array_filter($decoded, fn($v) => is_string($v) && $v !== ''));
     }
 
+    private function decodeMemberOverrides(?string $value): array
+    {
+        if (!$value) {
+            return [];
+        }
+
+        $decoded = json_decode($value, true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        $overrides = [];
+        foreach ($decoded as $entry) {
+            if (!is_array($entry)) {
+                continue;
+            }
+
+            $row = (int) ($entry['row'] ?? 0);
+            $name = trim((string) ($entry['name'] ?? ''));
+            $phone = trim((string) ($entry['phone'] ?? ''));
+
+            if ($row <= 0) {
+                continue;
+            }
+
+            $overrides[] = [
+                'row' => $row,
+                'name' => $name,
+                'phone' => $phone,
+            ];
+        }
+
+        return $overrides;
+    }
+
     protected function saveLastUpload(string $type, string $originalName, string $storagePath): void
     {
         AppSetting::set("last_{$type}_upload", json_encode([
@@ -343,5 +486,26 @@ class ImportController extends Controller
             'storage_path' => $storagePath,   // relative path e.g. "imports/MySheet.xlsx"
             'uploaded_at'  => now()->toDateTimeString(),
         ]));
+    }
+
+    private function notifyImportLoad(bool $success): void
+    {
+        if (!class_exists(NativeNotification::class)) {
+            return;
+        }
+
+        try {
+            if ($success) {
+                NativeNotification::title('Load Successful')
+                    ->message('Import page load successfully.')
+                    ->send();
+            } else {
+                NativeNotification::title('Load Failed')
+                    ->message('Import Page not loaded.')
+                    ->send();
+            }
+        } catch (\Throwable $e) {
+            // Ignore notification failures to keep web flow intact.
+        }
     }
 }

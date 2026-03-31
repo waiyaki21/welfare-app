@@ -16,22 +16,42 @@ class ExpenditureController extends Controller
 
         $expenditures = Expenditure::with('financialYear')
             ->when($fy, fn ($q) => $q->where('financial_year_id', $fy->id))
-            ->orderByRaw('month IS NULL, month')
-            ->orderBy('name')
+            ->groupedByNarration()
             ->get();
 
-        $groupedByMonth = $expenditures->groupBy(fn ($row) => $row->month ?: 0)->sortKeys();
-        $monthSummaries = $groupedByMonth->map(function ($rows, $month) {
-            $monthInt = (int) $month;
+        $groupedByNarration = $expenditures
+            ->groupBy(fn ($row) => $row->narration ?: 'Unspecified')
+            ->sortKeys();
+        $narrationSummaries = $groupedByNarration->map(function ($rows, $narration) {
+            $tableRows = $rows->map(function ($item) {
+                $actions = '<div class="flex items-center gap-1">'
+                    . '<a href="' . route('expenditures.show', $item) . '" class="btn btn-ghost btn-xs">View</a>'
+                    . '<a href="' . route('expenditures.edit', $item) . '" class="btn btn-ghost btn-xs">Edit</a>'
+                    . '<form method="POST" action="' . route('expenditures.destroy', $item) . '" onsubmit="return confirm(\'Delete this expenditure?\')">'
+                    . csrf_field()
+                    . method_field('DELETE')
+                    . '<button type="submit" class="btn btn-ghost btn-xs" style="color:var(--rust)">Delete</button>'
+                    . '</form>'
+                    . '</div>';
+
+                return [
+                    'name' => e($item->name),
+                    'amount' => number_format($item->amount, 2),
+                    'actions' => $actions,
+                    '__values' => [
+                        'name' => $item->name,
+                        'amount' => $item->amount,
+                        'actions' => '',
+                    ],
+                ];
+            });
 
             return [
-                'month' => $monthInt,
-                'month_name' => $monthInt > 0
-                    ? (\App\Models\Payment::MONTHS[$monthInt] ?? (string) $monthInt)
-                    : 'Unspecified',
+                'narration' => $narration,
                 'total' => (float) $rows->sum('amount'),
                 'count' => $rows->count(),
                 'items' => $rows,
+                'tableRows' => $tableRows,
             ];
         })->values();
 
@@ -42,28 +62,24 @@ class ExpenditureController extends Controller
             'years',
             'selectedYear',
             'fy',
-            'monthSummaries',
+            'narrationSummaries',
             'yearTotal'
         ));
     }
 
     public function show(Expenditure $expenditure)
     {
-        $monthlyRows = Expenditure::where('financial_year_id', $expenditure->financial_year_id)
-            ->where('name', $expenditure->name)
-            ->orderByRaw('month IS NULL, month')
+        $groupRows = Expenditure::where('financial_year_id', $expenditure->financial_year_id)
+            ->when($expenditure->narration, function ($query) use ($expenditure) {
+                $query->where('narration', $expenditure->narration);
+            }, function ($query) {
+                $query->whereNull('narration');
+            })
+            ->orderBy('name')
             ->get();
 
-        $monthlyBreakdown = $monthlyRows->map(function (Expenditure $row): array {
-            return [
-                'month' => $row->month,
-                'month_name' => $row->month_name,
-                'amount' => (float) $row->amount,
-            ];
-        });
-
-        $total = (float) $monthlyRows->sum('amount');
-        return view('expenditures.show', compact('expenditure', 'monthlyRows', 'monthlyBreakdown', 'total'));
+        $total = (float) $groupRows->sum('amount');
+        return view('expenditures.show', compact('expenditure', 'groupRows', 'total'));
     }
 
     public function create(Request $request)
@@ -77,12 +93,13 @@ class ExpenditureController extends Controller
     {
         $data = $request->validate([
             'financial_year_id' => 'required|exists:financial_years,id',
+            'narration' => 'nullable|string|max:255',
             'name' => 'required|string|max:255',
             'amount' => 'required|numeric|min:0.01',
-            'month' => 'nullable|integer|min:1|max:12',
         ]);
 
         $data['name'] = trim((string) preg_replace('/\s+/', ' ', $data['name']));
+        $data['narration'] = trim((string) ($data['narration'] ?? '')) ?: null;
         Expenditure::create($data);
 
         $year = FinancialYear::find($data['financial_year_id'])?->year;
@@ -99,12 +116,13 @@ class ExpenditureController extends Controller
     {
         $data = $request->validate([
             'financial_year_id' => 'required|exists:financial_years,id',
+            'narration' => 'nullable|string|max:255',
             'name' => 'required|string|max:255',
             'amount' => 'required|numeric|min:0.01',
-            'month' => 'nullable|integer|min:1|max:12',
         ]);
 
         $data['name'] = trim((string) preg_replace('/\s+/', ' ', $data['name']));
+        $data['narration'] = trim((string) ($data['narration'] ?? '')) ?: null;
         $expenditure->update($data);
 
         $year = FinancialYear::find($data['financial_year_id'])?->year;
@@ -118,32 +136,5 @@ class ExpenditureController extends Controller
         return redirect()->route('expenditures.index', ['year' => $year])->with('success', 'Expenditure deleted.');
     }
 
-    /**
-     * Spreadsheet compatibility helper:
-     * converts matrix-like rows (name + month columns) into normalized records.
-     */
-    private function normalizeSheetRows(array $rows, int $financialYearId): array
-    {
-        $records = [];
-        foreach ($rows as $row) {
-            $name = trim((string) ($row['name'] ?? ''));
-            if ($name === '') {
-                continue;
-            }
-
-            foreach (\App\Models\Payment::MONTHS as $month => $monthName) {
-                $value = (float) ($row[strtolower($monthName)] ?? $row[$monthName] ?? 0);
-                if ($value <= 0) {
-                    continue;
-                }
-                $records[] = [
-                    'financial_year_id' => $financialYearId,
-                    'name' => $name,
-                    'month' => $month,
-                    'amount' => $value,
-                ];
-            }
-        }
-        return $records;
-    }
+    // Month-based normalization removed: expenditures now group by narration only.
 }

@@ -46,6 +46,13 @@
             "@php artisan vendor:publish --tag=laravel-assets --ansi --force",
             "@php artisan native:install --force --quiet --publish"
         ],
+        "database:reset": [
+            "Composer\\Config::disableProcessTimeout",
+            "php artisan migrate:fresh",
+            "php artisan db:seed --class=ExpenseCategorySeeder",
+            "php artisan native:migrate:fresh",
+            "php artisan native:seed --class=ExpenseCategorySeeder"
+        ],
         "native:dev": [
             "Composer\\Config::disableProcessTimeout",
             "php artisan optimize:clear",

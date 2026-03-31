@@ -167,6 +167,15 @@ class MonthlyImportService
                 'records_count' => 0,
                 'total_amount' => 0.0,
             ],
+            'payments' => [
+                'month' => $month,
+                'month_name' => Payment::MONTHS[$month] ?? $month,
+                'items' => [],
+                'totals' => [
+                    'records_count' => 0,
+                    'total_amount' => 0.0,
+                ],
+            ],
             'expensesInfo' => [
                 'records_count' => 0,
                 'total_amount' => 0.0,
@@ -184,6 +193,16 @@ class MonthlyImportService
         }
 
         $parsedRows = $this->parseMonthlyRows($filePath, $results);
+        $results['payments']['items'] = array_values(array_filter(array_map(
+            fn(array $row) => $row['payment_amount'] > 0 ? [
+                'row' => $row['row'],
+                'name' => $row['name'],
+                'phone' => $row['phone'],
+                'amount' => $row['payment_amount'],
+            ] : null,
+            $parsedRows
+        )));
+        $results['payments']['totals'] = $results['paymentsInfo'];
         if ($persist) {
             DB::transaction(function () use (&$results, $parsedRows, $financialYear, $year, $month): void {
                 foreach ($parsedRows as $row) {
