@@ -30,18 +30,18 @@ class FinancialYearController extends Controller
             ->orderByDesc('year')
             ->get()
             ->map(function ($fy) {
-            $fy->member_count   = $fy->memberFinancials()->count();
-            $fy->total_contrib  = (float) Payment::where('financial_year_id', $fy->id)->sum('amount');
-            $fy->total_welfare  = (float) $fy->memberFinancials()->sum('total_welfare');
-            $fy->total_invest   = (float) $fy->memberFinancials()->sum('total_investment');
-            $fy->total_expenses = (float) Expense::where('financial_year_id', $fy->id)->sum('amount');
-            $fy->expenditures_count = (int) ($fy->expenditures_count ?? 0);
-            $fy->expenditures_total = (float) ($fy->expenditures_sum_amount ?? 0);
-            $fy->surplus_count  = $fy->memberFinancials()->where('welfare_owing', '>=', 0)->count();
-            $fy->deficit_count  = $fy->memberFinancials()->where('welfare_owing', '<', 0)->count();
-            $fy->payment_count  = Payment::where('financial_year_id', $fy->id)->count();
-            return $fy;
-        });
+                $fy->member_count   = $fy->memberFinancials()->count();
+                $fy->total_contrib  = (float) Payment::where('financial_year_id', $fy->id)->sum('amount');
+                $fy->total_welfare  = (float) $fy->memberFinancials()->sum('total_welfare');
+                $fy->total_invest   = (float) $fy->memberFinancials()->sum('total_investment');
+                $fy->total_expenses = (float) Expense::where('financial_year_id', $fy->id)->sum('amount');
+                $fy->expenditures_count = (int) ($fy->expenditures_count ?? 0);
+                $fy->expenditures_total = (float) ($fy->expenditures_sum_amount ?? 0);
+                $fy->surplus_count  = $fy->memberFinancials()->where('welfare_owing', '>=', 0)->count();
+                $fy->deficit_count  = $fy->memberFinancials()->where('welfare_owing', '<', 0)->count();
+                $fy->payment_count  = Payment::where('financial_year_id', $fy->id)->count();
+                return $fy;
+            });
 
         return view('financial-years.index', compact('years'));
     }
@@ -234,64 +234,6 @@ class FinancialYearController extends Controller
         return redirect()->route('dashboard')
             ->with('success', 'Database and files reset complete.');
     }
-
-    // public function resetExecute(Request $request)
-    // {
-    //     $resetUsers = $request->boolean('reset_users');
-
-    //     $expectedWord = $resetUsers ? 'RESET ALL' : 'RESET';
-
-    //     $request->validate([
-    //         'confirm_text' => ['required', "in:{$expectedWord}"],
-    //     ], [
-    //         'confirm_text.in' => "You must type {$expectedWord} (all caps) to confirm.",
-    //     ]);
-
-    //     DB::transaction(function () use ($resetUsers) {
-    //         // Hard delete everything — no soft deletes, no orphans left behind
-    //         DB::statement('PRAGMA foreign_keys = OFF');
-
-    //         Payment::query()->forceDelete();
-    //         Expense::query()->delete();
-    //         BankBalance::query()->delete();
-    //         WelfareEvent::query()->delete();
-    //         MemberFinancial::query()->delete();
-    //         FinancialYear::query()->delete();
-    //         Member::query()->delete();
-    //         ExpenseCategory::query()->delete();
-
-    //         if ($resetUsers) {
-    //             User::query()->delete();
-    //             AppSetting::query()->delete();
-    //             Cache::flush(); // simplest + safest
-    //             Storage::deleteDirectory('imports');
-    //         }
-
-    //         DB::statement('PRAGMA foreign_keys = ON');
-
-    //         // Reset all auto-increment counters so IDs start from 1 again
-    //         $tables = ['payments','expenses','bank_balances','welfare_events',
-    //                    'member_financials','financial_years','members','expense_categories'];
-    //         if ($resetUsers) {
-    //             $tables[] = 'users';
-    //             $tables[] = 'app_settings';
-    //         }
-    //         foreach ($tables as $table) {
-    //             DB::statement("DELETE FROM sqlite_sequence WHERE name = '{$table}'");
-    //         }
-    //     });
-
-    //     if ($resetUsers) {
-    //         Auth::logout();
-    //         request()->session()->invalidate();
-    //         request()->session()->regenerateToken();
-    //         return redirect()->route('auth.login')
-    //             ->with('success', 'Full reset complete. All data and user accounts cleared.');
-    //     }
-
-    //     return redirect()->route('dashboard')
-    //         ->with('success', 'Database reset complete. All association data cleared.');
-    // }
 
     // ── Export ───────────────────────────────────────────────────────────────
 

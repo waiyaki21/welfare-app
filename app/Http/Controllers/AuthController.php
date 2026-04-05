@@ -16,18 +16,27 @@ class AuthController extends Controller
     public function showLogin()
     {
         if (Auth::check()) return redirect()->route('dashboard');
+        if (User::count() == 0 && ! Auth::check()) {
+            return redirect()->route('auth.register')
+                ->with('info', 'No Users Yet, Start with registration.');
+        }
         return view('auth.login');
     }
 
     public function showRegister()
     {
         if (Auth::check()) return redirect()->route('dashboard');
-        // Only allow registration if no users exist yet (first-run) or if already logged in as admin
-        if (User::count() > 0 && !Auth::check()) {
+        if (User::count() > 0 && ! Auth::check()) {
             return redirect()->route('auth.login')
                 ->with('info', 'Registration is closed. Contact your administrator.');
         }
         return view('auth.register');
+    }
+
+    public function showForgotPassword()
+    {
+        if (Auth::check()) return redirect()->route('dashboard');
+        return view('auth.forgot-password');
     }
 
     // ── Conventional auth ────────────────────────────────────────────────────
@@ -50,7 +59,6 @@ class AuthController extends Controller
 
     public function register(Request $request)
     {
-        // Only allow if no users exist yet
         if (User::count() > 0) {
             return redirect()->route('auth.login')
                 ->with('info', 'Registration is closed.');
@@ -84,6 +92,39 @@ class AuthController extends Controller
         return redirect()->route('auth.login');
     }
 
+    // ── Forgot / Reset Password (local app — no email link needed) ───────────
+    //
+    // Because this is a desktop app with a single admin account, we skip the
+    // standard token-email flow. The user provides their registered email and
+    // a new password; if the email matches the account on record the password
+    // is updated immediately.
+
+    public function resetPassword(Request $request)
+    {
+        $data = $request->validate([
+            'email'    => 'required|email',
+            'password' => ['required', 'confirmed', Password::min(8)],
+        ]);
+
+        $user = User::where('email', $data['email'])->first();
+
+        // Always show the same success message — prevents email enumeration
+        if (! $user) {
+            return back()->with(
+                'success',
+                'If that email is registered, your password has been updated. Please sign in.'
+            );
+        }
+
+        $user->update(['password' => Hash::make($data['password'])]);
+
+        // Log out any existing session for this user across devices
+        Auth::logoutOtherDevices($data['password']);
+
+        return redirect()->route('auth.login')
+            ->with('success', 'Password updated successfully. Please sign in with your new password.');
+    }
+
     // ── Google OAuth ─────────────────────────────────────────────────────────
 
     public function redirectToGoogle()
@@ -100,30 +141,27 @@ class AuthController extends Controller
                 ->withErrors(['email' => 'Google sign-in failed. Please try again.']);
         }
 
-        // Find or create user
         $user = User::where('google_id', $googleUser->getId())
             ->orWhere('email', $googleUser->getEmail())
             ->first();
 
         if ($user) {
-            // Link Google ID if not already linked
-            if (!$user->google_id) {
+            if (! $user->google_id) {
                 $user->update(['google_id' => $googleUser->getId(), 'avatar' => $googleUser->getAvatar()]);
             }
         } else {
-            // Only allow new Google sign-ups if no users exist yet
             if (User::count() > 0) {
                 return redirect()->route('auth.login')
                     ->withErrors(['email' => 'No account found for this Google address. Contact your administrator.']);
             }
 
             $user = User::create([
-                'name'               => $googleUser->getName(),
-                'email'              => $googleUser->getEmail(),
-                'google_id'          => $googleUser->getId(),
-                'avatar'             => $googleUser->getAvatar(),
-                'role'               => 'admin',
-                'email_verified_at'  => now(),
+                'name'              => $googleUser->getName(),
+                'email'             => $googleUser->getEmail(),
+                'google_id'         => $googleUser->getId(),
+                'avatar'            => $googleUser->getAvatar(),
+                'role'              => 'admin',
+                'email_verified_at' => now(),
             ]);
         }
 

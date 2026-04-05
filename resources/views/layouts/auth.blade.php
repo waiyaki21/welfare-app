@@ -8,73 +8,190 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
     <style>
-        :root{
-            --forest:#1a3a2a;--leaf:#2d6a4f;--sage:#52b788;--mist:#d8f3dc;
-            --cream:#f7f5f0;--rust:#c0392b;--border:#e5e7eb;--white:#fff;
-            --ink:#1c1c1e;--mid:#6b7280;--r:12px;--r-sm:8px;
+        :root {
+            --forest:#1a3a2a; --leaf:#2d6a4f; --sage:#52b788; --mist:#d8f3dc;
+            --cream:#f7f5f0; --rust:#c0392b; --border:#e5e7eb; --white:#fff;
+            --ink:#1c1c1e; --mid:#6b7280; --r:12px; --r-sm:8px;
         }
-        *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-        html{font-size:15px;-webkit-font-smoothing:antialiased;}
-        body{font-family:'DM Sans',sans-serif;background:var(--cream);color:var(--ink);
-             min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+        *,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+        html { font-size:15px; -webkit-font-smoothing:antialiased; }
 
-        .auth-wrap{width:100%;max-width:440px;}
+        body {
+            font-family:'DM Sans',sans-serif;
+            background:var(--cream);
+            color:var(--ink);
+            min-height:100vh;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            /* Top padding clears the 32px drag region */
+            padding: 52px 20px 20px;
+        }
 
-        /* Brand mark */
-        .brand{text-align:center;margin-bottom:32px;}
-        .brand-icon{width:56px;height:56px;border-radius:14px;background:var(--forest);
-            color:var(--mist);display:flex;align-items:center;justify-content:center;
-            font-family:'DM Serif Display',serif;font-size:1.3rem;margin:0 auto 12px;}
-        .brand h1{font-family:'DM Serif Display',serif;font-size:1.5rem;color:var(--forest);}
-        .brand p{font-size:.875rem;color:var(--mid);margin-top:3px;}
+        /* ── Frameless drag bar ─────────────────────────────────────
+           Fully transparent — just a native drag surface with the
+           three control buttons pinned to the far right.
+        ────────────────────────────────────────────────────────── */
+        .titlebar {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%;
+            height: 32px;
+            background: transparent;
+            display: flex;
+            align-items: stretch;
+            justify-content: flex-end;
+            z-index: 9999;
+            -webkit-app-region: drag;
+        }
 
-        /* Card */
-        .auth-card{background:var(--white);border-radius:var(--r);border:1px solid var(--border);
-            box-shadow:0 1px 3px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.05);padding:28px 32px;}
+        /* ── Window control buttons ──────────────────────────────── */
+        .wc-buttons {
+            display: flex;
+            align-items: stretch;
+            height: 100%;
+            -webkit-app-region: no-drag;
+        }
 
-        /* Form elements */
-        .form-group{margin-bottom:18px;}
-        .form-label{display:block;font-size:.78rem;font-weight:600;color:var(--mid);
-            text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;}
-        .form-control{width:100%;padding:11px 14px;border:1.5px solid var(--border);
-            border-radius:var(--r-sm);font-size:.9rem;font-family:inherit;
-            background:var(--white);color:var(--ink);transition:border-color .15s,box-shadow .15s;}
-        .form-control:focus{outline:none;border-color:var(--sage);box-shadow:0 0 0 3px rgba(82,183,136,.15);}
-        .form-error{font-size:.78rem;color:var(--rust);margin-top:5px;}
+        .wc-btn {
+            width: 52px;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            /* Muted on the cream background; darkens on hover */
+            color: rgba(28, 28, 30, 0.38);
+            transition: background .12s ease, color .12s ease;
+            flex-shrink: 0;
+            outline: none;
+        }
+        .wc-btn svg { display: block; pointer-events: none; }
 
-        /* Buttons */
-        .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;
-            padding:11px 18px;border-radius:var(--r-sm);font-size:.9rem;font-weight:600;
-            cursor:pointer;border:none;text-decoration:none;transition:all .15s;font-family:inherit;}
-        .btn-primary{background:var(--forest);color:var(--white);margin-bottom:12px;}
-        .btn-primary:hover{background:var(--leaf);}
-        .btn-google{background:var(--white);color:var(--ink);border:1.5px solid var(--border);}
-        .btn-google:hover{border-color:var(--mid);background:#fafafa;}
+        .wc-btn.wc-minimize:hover  { background: rgba(0,0,0,.07); color: var(--ink); }
+        .wc-btn.wc-minimize:active { background: rgba(0,0,0,.13); }
 
-        /* Divider */
-        .divider{display:flex;align-items:center;gap:12px;margin:20px 0;color:var(--mid);font-size:.8rem;}
-        .divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--border);}
+        .wc-btn.wc-maximize:hover  { background: rgba(0,0,0,.07); color: var(--ink); }
+        .wc-btn.wc-maximize:active { background: rgba(0,0,0,.13); }
 
-        /* Alerts */
-        .alert{padding:11px 14px;border-radius:var(--r-sm);font-size:.855rem;margin-bottom:18px;border-left:3px solid;}
-        .alert-error{background:#fee2e2;color:#991b1b;border-color:var(--rust);}
-        .alert-info{background:#dbeafe;color:#1e40af;border-color:#3b82f6;}
-        .alert-success{background:var(--mist);color:var(--forest);border-color:var(--sage);}
+        .wc-btn.wc-close:hover  { background: #e81123; color: #fff; }
+        .wc-btn.wc-close:active { background: #bf0f1d; color: #fff; }
 
-        /* Footer link */
-        .auth-footer{text-align:center;margin-top:20px;font-size:.855rem;color:var(--mid);}
-        .auth-footer a{color:var(--leaf);text-decoration:none;font-weight:500;}
-        .auth-footer a:hover{text-decoration:underline;}
+        /* Icon swap */
+        .icon-restore { display: none !important; }
+        .icon-maximize { display: block !important; }
 
-        /* Checkbox */
-        .check-label{display:flex;align-items:center;gap:8px;font-size:.875rem;color:var(--mid);cursor:pointer;}
-        .check-label input{width:16px;height:16px;accent-color:var(--leaf);}
+        .wc-btn.is-maximized .icon-maximize { display: none !important; }
+        .wc-btn.is-maximized .icon-restore  { display: block !important; }
 
-        /* Google icon */
-        .google-icon{width:18px;height:18px;flex-shrink:0;}
+        /* ── Auth layout ─────────────────────────────────────────── */
+        .auth-wrap { width:100%; max-width:440px; }
+
+        .brand { text-align:center; margin-bottom:32px; }
+        .brand-icon {
+            width:56px; height:56px; border-radius:14px;
+            background:var(--forest); color:var(--mist);
+            display:flex; align-items:center; justify-content:center;
+            font-family:'DM Serif Display',serif; font-size:1.3rem;
+            margin:0 auto 12px;
+        }
+        .brand h1 { font-family:'DM Serif Display',serif; font-size:1.5rem; color:var(--forest); }
+        .brand p  { font-size:.875rem; color:var(--mid); margin-top:3px; }
+
+        .auth-card {
+            background:var(--white); border-radius:var(--r);
+            border:1px solid var(--border);
+            box-shadow:0 1px 3px rgba(0,0,0,.06),0 8px 24px rgba(0,0,0,.05);
+            padding:28px 32px;
+        }
+
+        .form-group  { margin-bottom:18px; }
+        .form-label  {
+            display:block; font-size:.78rem; font-weight:600; color:var(--mid);
+            text-transform:uppercase; letter-spacing:.06em; margin-bottom:6px;
+        }
+        .form-control {
+            width:100%; padding:11px 14px; border:1.5px solid var(--border);
+            border-radius:var(--r-sm); font-size:.9rem; font-family:inherit;
+            background:var(--white); color:var(--ink);
+            transition:border-color .15s, box-shadow .15s;
+        }
+        .form-control:focus { outline:none; border-color:var(--sage); box-shadow:0 0 0 3px rgba(82,183,136,.15); }
+        .form-error  { font-size:.78rem; color:var(--rust); margin-top:5px; }
+
+        .btn {
+            display:flex; align-items:center; justify-content:center; gap:8px;
+            width:100%; padding:11px 18px; border-radius:var(--r-sm);
+            font-size:.9rem; font-weight:600; cursor:pointer; border:none;
+            text-decoration:none; transition:all .15s; font-family:inherit;
+        }
+        .btn-primary  { background:var(--forest); color:var(--white); margin-bottom:12px; }
+        .btn-primary:hover { background:var(--leaf); }
+        .btn-google   { background:var(--white); color:var(--ink); border:1.5px solid var(--border); }
+        .btn-google:hover { border-color:var(--mid); background:#fafafa; }
+
+        .divider {
+            display:flex; align-items:center; gap:12px;
+            margin:20px 0; color:var(--mid); font-size:.8rem;
+        }
+        .divider::before,.divider::after { content:''; flex:1; height:1px; background:var(--border); }
+
+        .alert {
+            padding:11px 14px; border-radius:var(--r-sm);
+            font-size:.855rem; margin-bottom:18px; border-left:3px solid;
+        }
+        .alert-error   { background:#fee2e2; color:#991b1b; border-color:var(--rust); }
+        .alert-info    { background:#dbeafe; color:#1e40af; border-color:#3b82f6; }
+        .alert-success { background:var(--mist); color:var(--forest); border-color:var(--sage); }
+
+        .auth-footer { text-align:center; margin-top:20px; font-size:.855rem; color:var(--mid); }
+        .auth-footer a { color:var(--leaf); text-decoration:none; font-weight:500; }
+        .auth-footer a:hover { text-decoration:underline; }
+
+        .check-label { display:flex; align-items:center; gap:8px; font-size:.875rem; color:var(--mid); cursor:pointer; }
+        .check-label input { width:16px; height:16px; accent-color:var(--leaf); }
+
+        .google-icon { width:18px; height:18px; flex-shrink:0; }
     </style>
 </head>
 <body>
+
+{{-- Transparent drag bar — no title, no background, just a native drag surface --}}
+<div class="titlebar">
+    <div class="wc-buttons">
+
+        {{-- Minimize --}}
+        <button class="wc-btn wc-minimize" id="min-btn" title="Minimize">
+            <svg width="14" height="2" viewBox="0 0 14 2" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect width="14" height="2" rx="1" fill="currentColor"/>
+            </svg>
+        </button>
+
+        {{-- Maximize / Restore --}}
+        <button class="wc-btn wc-maximize" id="max-btn" title="Maximize">
+            <svg class="icon-maximize" width="13" height="13" viewBox="0 0 13 13" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="1" y="1" width="11" height="11" rx="2" stroke="currentColor" stroke-width="1.6" fill="none"/>
+            </svg>
+            <svg class="icon-restore" width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="0.8" y="3.8" width="9.4" height="9.4" rx="1.8" stroke="currentColor" stroke-width="1.5" fill="none"/>
+                <path d="M3.8 3.8V2C3.8 1.338 4.338 0.8 5 0.8H12C12.662 0.8 13.2 1.338 13.2 2V9C13.2 9.662 12.662 10.2 12 10.2H10.2"
+                      stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+        </button>
+
+        {{-- Close --}}
+        <button class="wc-btn wc-close" id="close-btn" title="Close">
+            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <line x1="1.5" y1="1.5" x2="11.5" y2="11.5" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+                <line x1="11.5" y1="1.5" x2="1.5"  y2="11.5" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"/>
+            </svg>
+        </button>
+
+    </div>
+</div>
+
 <div class="auth-wrap">
     <div class="brand">
         <div class="brand-icon">{{ substr(\App\Models\AppSetting::appName(), 0, 1) }}</div>
@@ -95,5 +212,40 @@
 
     <div class="auth-footer">@yield('footer')</div>
 </div>
+
+<script>
+(function () {
+    const csrfToken = '{{ csrf_token() }}';
+
+    async function wc(action) {
+        await fetch('/window/control/' + action, {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': csrfToken,
+                'Accept': 'application/json'
+            }
+        });
+    }
+
+    const maxBtn = document.getElementById('max-btn');
+    let isMaximized = false; // Local state tracking
+
+    document.getElementById('min-btn').onclick = () => wc('minimize');
+    
+    document.getElementById('close-btn').onclick = () => wc('close');
+
+    maxBtn.onclick = async () => {
+        if (isMaximized) {
+            await wc('unmaximize');
+            maxBtn.classList.remove('is-maximized');
+            isMaximized = false;
+        } else {
+            await wc('maximize');
+            maxBtn.classList.add('is-maximized');
+            isMaximized = true;
+        }
+    };
+})();
+</script>
 </body>
 </html>

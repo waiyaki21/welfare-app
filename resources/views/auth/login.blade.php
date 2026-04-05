@@ -10,6 +10,10 @@
 </div>
 @endif
 
+@if(session('success'))
+<div class="alert alert-success">{{ session('success') }}</div>
+@endif
+
 {{-- Google Sign-In --}}
 @if(config('services.google.client_id'))
 <a href="{{ route('auth.google') }}" class="btn btn-google">
@@ -41,6 +45,7 @@
         <label class="check-label">
             <input type="checkbox" name="remember"> Remember me
         </label>
+        <a href="{{ route('auth.password.reset') }}" style="font-size:.8rem;color:var(--forest);">Forgot password?</a>
     </div>
     <button type="submit" class="btn btn-primary">Sign In</button>
 </form>

@@ -74,6 +74,11 @@
             "@php -r \"echo '\\e[32m--------------------------------------------------\\e[0m' . PHP_EOL;\"",
             "@php -r \"echo '\\e[32m   BUILD COMPLETE: Check the /dist folder!        \\e[0m' . PHP_EOL;\"",
             "@php -r \"echo '\\e[32m--------------------------------------------------\\e[0m' . PHP_EOL;\""
+        ],
+        "native:publish": [
+            "Composer\\Config::disableProcessTimeout",
+            "@native:dist",
+            "npm run release"
         ]
     },
     "extra": {

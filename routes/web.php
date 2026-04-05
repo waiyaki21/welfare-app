@@ -10,7 +10,14 @@ use App\Http\Controllers\ImportController;
 use App\Http\Controllers\FinancialYearController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\NativeWindowController;
+
 use Illuminate\Support\Facades\Route;
+
+// ── Native routes: Window controls ──────────────────────────────────────────────
+Route::controller(NativeWindowController::class)->group(function () {
+    Route::post('/window/control/{action}', 'control')->name('window.control');
+});
 
 // ── Auth routes (guest only) ──────────────────────────────────────────────
 Route::middleware('guest')->group(function () {
@@ -21,6 +28,9 @@ Route::middleware('guest')->group(function () {
 
     Route::get('/auth/google',          [AuthController::class, 'redirectToGoogle'])->name('auth.google');
     Route::get('/auth/google/callback', [AuthController::class, 'handleGoogleCallback'])->name('auth.google.callback');
+
+    Route::get('/forgot-password',  [AuthController::class, 'showForgotPassword'])->name('auth.password.reset');
+    Route::post('/forgot-password', [AuthController::class, 'resetPassword'])->name('auth.password.reset.post');
 });
 
 // Logout (auth required)
@@ -110,4 +120,11 @@ Route::middleware('auth')->group(function () {
 
     // Import Last upload
     Route::post('/import/preview-last', [ImportController::class, 'previewLastUpload'])->name('import.preview.last');
+
+    // Import pre-flight checks (month payments / year expenditures)
+    Route::post('/imports/check/month-payments',     [ImportController::class, 'checkMonthPayments'])->name('imports.check.month-payments');
+    Route::post('/imports/check/year-expenditures',  [ImportController::class, 'checkYearExpenditures'])->name('imports.check.year-expenditures');
+
+    // Updates
+    Route::post('/updates/check', [\App\Http\Controllers\UpdateController::class, 'check'])->name('updates.check');
 });

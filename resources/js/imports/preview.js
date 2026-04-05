@@ -25,9 +25,18 @@ const titleCase = (value) => value
     .map((chunk) => chunk.charAt(0).toUpperCase() + chunk.slice(1))
     .join(' ');
 
-const createTabButton = (id, title, count) => {
+const createTabButton = (id, title, count, hasAlert) => {
     const badge = typeof count === 'number' ? `<span class="year-tab-badge">${count}</span>` : '';
-    return `<button type="button" class="year-tab-btn" data-tab="${id}"><span>${title}</span>${badge}</button>`;
+    const alertIndicator = hasAlert
+        ? `<span class="year-tab-alert" aria-label="Has errors">
+               <svg class="year-tab-alert-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                   <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                   <line x1="12" y1="9" x2="12" y2="13"/>
+                   <line x1="12" y1="17" x2="12.01" y2="17"/>
+               </svg>
+           </span>`
+        : '';
+    return `<button type="button" class="year-tab-btn" data-tab="${id}"><span>${title}</span>${badge}${alertIndicator}</button>`;
 };
 
 export const createPreviewUI = ({ elements, state, tabs, handler }) => {
@@ -71,7 +80,7 @@ export const createPreviewUI = ({ elements, state, tabs, handler }) => {
     const renderTabs = () => {
         const meta = handler?.getTabMeta ? handler.getTabMeta(state, tabs) : null;
         const items = (meta && meta.length ? meta : tabs.map((tab) => ({ id: tab, label: titleCase(tab) })));
-        elements.tabs.innerHTML = items.map((item) => createTabButton(item.id, item.label, item.count)).join('');
+        elements.tabs.innerHTML = items.map((item) => createTabButton(item.id, item.label, item.count, item.hasAlert)).join('');
         elements.tabs.querySelectorAll('.year-tab-btn').forEach((button) => {
             button.addEventListener('click', () => activate(button.dataset.tab));
         });

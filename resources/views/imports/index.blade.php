@@ -2,9 +2,9 @@
 @section('title', 'Imports')
 
 @php
-    $monthlyEnabled = $importStates['month']['enabled'] ?? false;
+    $monthlyEnabled     = $importStates['month']['enabled']       ?? false;
     $expenditureEnabled = $importStates['expenditure']['enabled'] ?? false;
-    $yearEnabled = $importStates['year']['enabled'] ?? true;
+    $yearEnabled        = $importStates['year']['enabled']        ?? true;
 @endphp
 
 @section('content')
@@ -22,6 +22,7 @@
     </div>
 
     <div class="import-card-grid">
+        {{-- Year --}}
         <div class="import-type-card">
             <div class="import-card-head">
                 <div class="import-card-title">Year Import</div>
@@ -36,6 +37,7 @@
             </button>
         </div>
 
+        {{-- Monthly --}}
         <div class="import-type-card {{ $monthlyEnabled ? '' : 'is-disabled' }}">
             <div class="import-card-head">
                 <div class="import-card-title">Monthly Import</div>
@@ -55,6 +57,7 @@
             </button>
         </div>
 
+        {{-- Expenditure --}}
         <div class="import-type-card {{ $expenditureEnabled ? '' : 'is-disabled' }}">
             <div class="import-card-head">
                 <div class="import-card-title">Expenditure Import</div>
@@ -69,7 +72,7 @@
                 </div>
             @endif
             <button class="btn btn-outline" data-modal-open="expenditure-import-modal" {{ $expenditureEnabled ? '' : 'disabled' }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 7h16"></path><path d="M4 12h16"></path><path d="M4 17h10"></path></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h10"/></svg>
                 Import Expenditures
             </button>
         </div>
@@ -77,7 +80,11 @@
 </div>
 @endsection
 
-{{-- Import Modals --}}
+{{-- ══════════════════════════════════════════════════════════════════════════
+     MODALS
+     ══════════════════════════════════════════════════════════════════════════ --}}
+
+{{-- ── Year modal (unchanged behaviour) ──────────────────────────────────── --}}
 <x-dashboard.import-modal
     title="Import Yearly Spreadsheet"
     importType="year"
@@ -92,50 +99,13 @@
 >
     <x-slot name="inlineNote">
         <div class="import-inline-note">
-            Accepts <strong>.xlsx</strong> files up to 20MB. Parsing is dynamic and supports varying sheet structures (2022-2026).
+            Accepts <strong>.xlsx</strong> files up to 20MB. Parsing is dynamic and supports varying sheet structures (2022–2026).
         </div>
     </x-slot>
 </x-dashboard.import-modal>
 
-<x-dashboard.import-modal
-    title="Import Expenditures"
-    importType="expenditure"
-    :previewTabs="['Summary', 'Expenses', 'Errors']"
-    uploadRoute="{{ route('imports.expenditures.preview') }}"
-    submitRoute="{{ route('imports.expenditures.final') }}"
-    dropLabel="Drop your expenditures file here"
-    importLabel="Import"
->
-    <x-slot name="leftExtra">
-        <div style="background:var(--surface);border-radius:var(--r-sm);padding:14px 16px;margin-bottom:14px;border:1px solid var(--border);">
-            <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--mid);margin-bottom:10px;">
-                Download Template
-            </div>
-            <div class="form-row">
-                <div class="form-group" style="margin-bottom:0;">
-                    <label class="form-label">Financial Year</label>
-                    <select class="form-control import-select" data-role="template-year">
-                        @foreach($financialYears as $yr)
-                        <option value="{{ $yr }}" {{ $yr == $selectedYear ? 'selected' : '' }}>{{ $yr }}</option>
-                        @endforeach
-                    </select>
-                </div>
-                <div class="form-group" style="margin-bottom:0;display:flex;align-items:flex-end;">
-                    <button type="button" class="btn btn-outline btn-sm" data-role="download-template" data-template-url="{{ url('/expenditures/template') }}" style="gap:6px;">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                        Download Template
-                    </button>
-                </div>
-            </div>
-        </div>
-    </x-slot>
-    <x-slot name="inlineNote">
-        <div class="import-inline-note">
-            Upload one year of expenditures at a time. The preview groups rows by month before saving.
-        </div>
-    </x-slot>
-</x-dashboard.import-modal>
 
+{{-- ── Monthly modal ───────────────────────────────────────────────────────── --}}
 <x-dashboard.import-modal
     title="Import Monthly Payments"
     importType="monthly"
@@ -144,47 +114,129 @@
     submitRoute="{{ route('imports.final.month') }}"
     dropLabel="Drop filled template here"
     importLabel="Import Payments"
+    checkMonthUrl="{{ route('imports.check.month-payments') }}"
+    :hideFormOnFile="true"
 >
     <x-slot name="leftExtra">
-        <div style="background:var(--surface);border-radius:var(--r-sm);padding:16px 18px;margin-bottom:18px;border:1px solid var(--border);">
-            <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--mid);margin-bottom:12px;">
-                Step 1 - Download Template
+        {{-- ── Step 1: Download template ──────────────────────────────── --}}
+        <div class="import-glass-section">
+            <div class="import-glass-section-label">
+                Step 1 — Download Template
             </div>
-            <div class="form-row">
-                <div class="form-group" style="margin-bottom:0;">
-                    <label class="form-label">Financial Year</label>
-                    <select class="form-control import-select" data-role="template-year">
-                        @for($yr = $minYear; $yr <= $maxYear; $yr++)
+
+            <div class="form-group" style="margin-bottom:10px;">
+                <label class="form-label">Financial Year</label>
+                <select class="form-control import-select-full" data-role="template-year">
+                    @for($yr = $maxYear; $yr >= $minYear; $yr--)
                         <option value="{{ $yr }}" {{ $yr == $selectedYear ? 'selected' : '' }}>{{ $yr }}</option>
-                        @endfor
-                    </select>
-                </div>
-                <div class="form-group" style="margin-bottom:0;">
-                    <label class="form-label">Month</label>
-                    <select class="form-control import-select" data-role="template-month">
-                        @foreach(\App\Models\Payment::MONTHS as $n => $mn)
-                        <option value="{{ $n }}" {{ $n == date('n') ? 'selected' : '' }}>{{ $mn }}</option>
-                        @endforeach
-                    </select>
-                </div>
+                    @endfor
+                </select>
             </div>
-            <div style="margin-top:12px;">
-                <button type="button" class="btn btn-outline btn-sm" data-role="download-template" data-template-url="{{ route('import.monthly.template') }}" style="gap:6px;">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                    Download Template for Selected Month
-                </button>
-                <div class="text-sm text-mid" style="margin-top:6px;">
-                    Pre-filled with all members. Green cells = existing payment, amber = existing welfare.
-                </div>
+
+            <div class="form-group" style="margin-bottom:10px;">
+                <label class="form-label">Month</label>
+                <select class="form-control import-select-full" data-role="template-month">
+                    @foreach(\App\Models\Payment::MONTHS as $n => $mn)
+                        <option value="{{ $n }}" {{ $n == date('n') ? 'selected' : '' }}>{{ $mn }}</option>
+                    @endforeach
+                </select>
+            </div>
+
+            <button type="button"
+                    class="btn btn-outline inline-flex w-full justify-center import-template-btn"
+                    data-role="download-template"
+                    data-template-url="{{ route('import.monthly.template') }}">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                Download Template for Selected Month
+            </button>
+
+            <div class="import-glass-hint" style="margin-top:8px;">
+                Pre-filled with all members. Green cells = existing payment, amber = existing welfare.
             </div>
         </div>
 
-        <input type="hidden" name="year" data-role="upload-year">
+        {{-- ── Step 2: Upload label (drop zone is rendered by the component) -- --}}
+        <div class="import-glass-section" style="margin-top:12px;">
+            <div class="import-glass-section-label">
+                Step 2 — Upload Filled Template
+            </div>
+            <div class="import-glass-hint">
+                Select a year and month above first — the upload area will unlock automatically.
+            </div>
+        </div>
+
+        {{-- Hidden inputs synced by JS --}}
+        <input type="hidden" name="year"  data-role="upload-year">
         <input type="hidden" name="month" data-role="upload-month">
     </x-slot>
+
     <x-slot name="inlineNote">
-        <div style="margin-top:12px;padding:10px 12px;background:#fef3c7;border-radius:var(--r-sm);font-size:.78rem;color:#92400e;line-height:1.6;">
-            <strong>Note:</strong> Members with an existing payment or welfare for the selected month will be skipped automatically - no overwriting.
+        <div class="import-inline-note import-inline-note-warn">
+            <strong>Note:</strong> Members with an existing payment or welfare for the selected month will be skipped automatically — no overwriting.
+        </div>
+    </x-slot>
+</x-dashboard.import-modal>
+
+
+{{-- ── Expenditure modal ───────────────────────────────────────────────────── --}}
+<x-dashboard.import-modal
+    title="Import Expenditures"
+    importType="expenditure"
+    :previewTabs="['Summary', 'Expenses', 'Errors']"
+    uploadRoute="{{ route('imports.expenditures.preview') }}"
+    submitRoute="{{ route('imports.expenditures.final') }}"
+    dropLabel="Drop your expenditures file here"
+    importLabel="Import"
+    checkYearUrl="{{ route('imports.check.year-expenditures') }}"
+    :hideFormOnFile="true"
+>
+    <x-slot name="leftExtra">
+        {{-- ── Download template ──────────────────────────────────────── --}}
+        <div class="import-glass-section">
+            <div class="import-glass-section-label">
+                Download Template
+            </div>
+
+            <div class="form-group" style="margin-bottom:10px;">
+                <label class="form-label">Financial Year</label>
+                <select class="form-control import-select-full" data-role="year-input">
+                    @foreach($financialYears as $yr)
+                        <option value="{{ $yr }}" {{ $yr == $selectedYear ? 'selected' : '' }}>{{ $yr }}</option>
+                    @endforeach
+                </select>
+            </div>
+
+            <button type="button"
+                    class="btn btn-outline inline-flex w-full justify-center import-template-btn"
+                    data-role="download-template"
+                    data-template-url="{{ url('/expenditures/template') }}">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                Download Expenditure Template
+            </button>
+        </div>
+
+        {{-- ── Upload label ────────────────────────────────────────────── --}}
+        <div class="import-glass-section" style="margin-top:12px;">
+            <div class="import-glass-section-label">
+                Upload Expenditures File
+            </div>
+            <div class="import-glass-hint">
+                Select a financial year above — the upload area will unlock automatically.
+            </div>
+        </div>
+    </x-slot>
+
+    <x-slot name="inlineNote">
+        <div class="import-inline-note">
+            Upload one year of expenditures at a time. The preview groups rows by narration before saving.
         </div>
     </x-slot>
 </x-dashboard.import-modal>

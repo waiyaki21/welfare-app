@@ -1,0 +1,14 @@
+[
+  {
+    "version": "1.0.3",
+    "date": "2026-04-02",
+    "changes": [
+      "New Expenditures",
+      "New Monthly Uploads",
+      "Maximize, Minimize and close buttons",
+      "Publishing Setup",
+      "AutoUpdate Setup",
+      "Spreadsheet Error managment"
+    ]
+  }
+]

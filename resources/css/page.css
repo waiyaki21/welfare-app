@@ -1,7 +1,7 @@
 html {
 	font-size: 15px;
 	-webkit-font-smoothing: antialiased;
-	scrollbar-width: thin;
+	scrollbar-width: none;
 }
 
 body {
@@ -40,7 +40,7 @@ body.sb-collapsed {
 	border-bottom: 1px solid rgba(255, 255, 255, .09);
 	display: flex;
 	align-items: center;
-	gap: 10px;
+	/* gap: 10px; */
 	min-height: 64px;
 	flex-shrink: 0;
 	overflow: hidden;
@@ -76,29 +76,84 @@ body.sb-collapsed .sidebar .sb-brand-text {
 	pointer-events: none;
 }
 
-/* Toggle button */
+/* Toggle button container */
 .sb-toggle {
 	flex-shrink: 0;
-	width: 26px;
-	height: 26px;
-	border-radius: 6px;
-	background: rgba(255, 255, 255, .08);
-	border: none;
-	color: rgba(255, 255, 255, .55);
+	width: 32px;
+	/* Slightly wider for better proportions */
+	height: 32px;
+	/* border-radius: 6px; */
+	/* background: rgba(255, 255, 255, .08); */
+	/* border: none; */
+	color: #fff;
 	cursor: pointer;
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	transition: background .13s, transform .22s;
+	transition: background .13s;
+	padding: 0;
 }
 
 .sb-toggle:hover {
-	background: rgba(255, 255, 255, .16);
-	color: #fff;
+	background: rgba(255, 255, 255, 0);
 }
 
-body.sb-collapsed .sidebar .sb-toggle {
-	transform: rotate(180deg);
+/* Hamburger wrapper - fixed height and width for math precision */
+.hamburger-icon {
+	width: 20px;
+	height: 14px;
+	position: relative;
+	cursor: pointer;
+}
+
+/* Individual lines */
+.hamburger-icon span {
+	display: block;
+	position: absolute;
+	height: 2px;
+	width: 100%;
+	background-color: currentColor;
+	border-radius: 2px;
+	opacity: 1;
+	left: 0;
+	/* This makes sure they rotate from their own center */
+	transform-origin: center;
+	transition: .25s ease-in-out;
+}
+
+/* 1. Top Line */
+.hamburger-icon span:nth-child(1) {
+	top: 0px;
+}
+
+/* 2. Middle Line */
+.hamburger-icon span:nth-child(2) {
+	top: 6px;
+}
+
+/* 3. Bottom Line */
+.hamburger-icon span:nth-child(3) {
+	top: 12px;
+}
+
+/* --- The Transformation --- */
+
+/* Top line: move to middle and rotate */
+body.sb-collapsed .hamburger-icon span:nth-child(1) {
+	top: 6px;
+	transform: rotate(135deg);
+}
+
+/* Middle line: disappear */
+body.sb-collapsed .hamburger-icon span:nth-child(2) {
+	opacity: 0;
+	left: -20px;
+}
+
+/* Bottom line: move to middle and rotate */
+body.sb-collapsed .hamburger-icon span:nth-child(3) {
+	top: 6px;
+	transform: rotate(-135deg);
 }
 
 /* Nav */
@@ -118,20 +173,39 @@ body.sb-collapsed .sidebar .sb-toggle {
 	border-radius: 3px;
 }
 
+/* Update the section to handle the transition */
 .sb-section {
+	position: relative;
 	font-size: .6rem;
 	font-weight: 700;
 	text-transform: uppercase;
 	letter-spacing: .15em;
 	color: rgba(255, 255, 255, .28);
-	padding: 10px 20px 3px;
+	padding: 18px 20px 8px;
+	/* Adjusted padding for better spacing */
 	white-space: nowrap;
-	overflow: hidden;
-	transition: opacity .15s;
+	transition: all .2s ease;
 }
 
-body.sb-collapsed .sidebar .sb-section {
-	opacity: 0;
+/* When collapsed: hide text, show line */
+body.sb-collapsed .sb-section {
+	color: transparent;
+	/* Hides the text but keeps the element's height */
+	padding: 8px;
+	/* Center the line vertically */
+	/* display: flex; */
+	/* justify-content: center; */
+	align-items: center;
+}
+
+body.sb-collapsed .sb-section::before {
+	content: "";
+	display: block;
+	width: 90%;
+	/* Takes up 60-80% of the collapsed width */
+	height: 1px;
+	background: rgba(255, 255, 255, .1);
+	transition: opacity .2s;
 }
 
 .sb-item {
@@ -146,7 +220,7 @@ body.sb-collapsed .sidebar .sb-section {
 	border-left: 3px solid transparent;
 	transition: all .13s;
 	white-space: nowrap;
-	overflow: hidden;
+	overflow: visible;
 	position: relative;
 }
 
@@ -264,7 +338,7 @@ body.sb-collapsed .sidebar .sb-dot {
 	align-items: center;
 	gap: 9px;
 	text-decoration: none;
-	padding: 7px 8px;
+	padding: 7px 4px;
 	border-radius: 8px;
 	transition: background .13s;
 	margin-bottom: 6px;
@@ -372,6 +446,180 @@ body.sb-collapsed .sidebar .sb-footer {
 	opacity: 0;
 }
 
+/* Ensure containers don't clip tooltips */
+.sb-user,
+.sb-user-link,
+.sb-logout {
+	overflow: visible !important;
+	position: relative;
+}
+
+/* Shared Tooltip Style */
+body.sb-collapsed .sb-item-tooltip::after {
+	content: attr(data-label);
+	position: absolute;
+	left: 100%;
+	margin-left: 12px;
+	top: 50%;
+	transform: translateY(-50%);
+	background: #1c1c1e;
+	color: #fff;
+	padding: 6px 10px;
+	border-radius: 4px;
+	font-size: .75rem;
+	white-space: nowrap;
+	opacity: 0;
+	visibility: hidden;
+	transition: all 0.2s;
+	z-index: 1000;
+	box-shadow: 4px 0 15px rgba(0, 0, 0, 0.3);
+}
+
+body.sb-collapsed .sb-item-tooltip:hover::after {
+	opacity: 1;
+	visibility: visible;
+}
+
+/* Tooltip Base */
+body.sb-collapsed .sb-item::after {
+	content: attr(data-label);
+	position: absolute;
+	/* Position it to the right of the icon */
+	left: 100%;
+	margin-left: 10px;
+	top: 50%;
+	transform: translateY(-50%);
+
+	background: #1c1c1e;
+	color: #fff;
+	padding: 6px 12px;
+	border-radius: 6px;
+	font-size: .75rem;
+	font-weight: 500;
+	white-space: nowrap;
+
+	/* Hide by default */
+	opacity: 0;
+	visibility: hidden;
+	pointer-events: none;
+	transition: opacity 0.2s, visibility 0.2s;
+
+	box-shadow: 0 4px 12px rgba(0, 0, 0, .5);
+	z-index: 9999;
+}
+
+/* Show on hover ONLY when collapsed */
+body.sb-collapsed .sb-item:hover::after {
+	opacity: 1;
+	visibility: visible;
+}
+
+/* Optional: Add a small arrow/triangle */
+body.sb-collapsed .sb-item::before {
+	content: "";
+	position: absolute;
+	left: 100%;
+	margin-left: 4px;
+	top: 50%;
+	transform: translateY(-50%);
+	border: 6px solid transparent;
+	border-right-color: #1c1c1e;
+	opacity: 0;
+	visibility: hidden;
+	transition: opacity 0.2s;
+	z-index: 9999;
+}
+
+body.sb-collapsed .sb-item:hover::before {
+	opacity: 1;
+	visibility: visible;
+}
+
+/* Ensure the sidebar itself doesn't clip the tooltips */
+body.sb-collapsed .sidebar {
+	overflow: visible !important;
+}
+
+/* Keep the nav scrollable, but allow tooltips to pop out */
+body.sb-collapsed .sb-nav {
+	overflow: visible;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Sidebar — Check for Updates button
+   Add to resources/css/app.css alongside your existing .sb-logout styles
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Sits directly below .sb-user, shares the same bottom-of-sidebar region */
+.sb-update-btn {
+    display        : flex;
+    align-items    : center;
+    gap            : 8px;
+    width          : 100%;
+    padding        : 7px 14px;
+    background     : transparent;
+    border         : none;
+    border-top     : 1px solid rgba(255, 255, 255, 0.07);
+    color          : rgba(255, 255, 255, 0.55);
+    font-size      : .78rem;
+    font-weight    : 500;
+    text-align     : left;
+    cursor         : pointer;
+    transition     : background 0.15s ease, color 0.15s ease;
+    white-space    : nowrap;
+    overflow       : hidden;
+}
+
+.sb-update-btn:hover {
+    background : rgba(255, 255, 255, 0.07);
+    color      : rgba(255, 255, 255, 0.9);
+}
+
+.sb-update-btn:disabled {
+    cursor  : default;
+    opacity : 0.6;
+}
+
+/* Checking state: subtle pulse on background */
+.sb-update-btn--checking {
+    color : rgba(255, 255, 255, 0.75);
+}
+
+/* Icon */
+.sb-update-btn .sb-update-icon {
+    flex-shrink : 0;
+    opacity     : 0.7;
+    transition  : opacity 0.15s;
+}
+.sb-update-btn:hover .sb-update-icon {
+    opacity : 1;
+}
+
+/* Label — hidden when sidebar is collapsed */
+.sb-update-label {
+    flex       : 1;
+    overflow   : hidden;
+    text-overflow: ellipsis;
+    transition : opacity 0.2s ease, width 0.2s ease;
+}
+
+/* Collapsed sidebar: hide label (same pattern as .sb-logout-label) */
+.sb-collapsed .sb-update-label {
+    opacity : 0;
+    width   : 0;
+}
+
+/* Spinning animation for the checking state */
+@keyframes sb-spin {
+    to { transform: rotate(360deg); }
+}
+.sb-update-spin {
+    animation     : sb-spin 0.8s linear infinite;
+    transform-origin: center;
+    flex-shrink   : 0;
+    opacity       : 0.85;
+}
+
 /* ── Main content area ────────────────────────────────── */
 .main {
 	margin-left: var(--sb-w);
@@ -411,7 +659,7 @@ body.sb-collapsed .sidebar .sb-footer {
 .topbar-right {
 	display: flex;
 	align-items: center;
-	gap: 10px;
+	gap: 8px;
 	flex-shrink: 0;
 }
 
@@ -1092,4 +1340,99 @@ textarea.form-control {
 
 .empty-state p {
 	font-size: .875rem;
+}
+
+.topbar-right {
+	align-self: stretch !important;
+	align-items: stretch !important;
+}
+
+.wc-buttons {
+	display: flex;
+	align-items: stretch;
+	height: 56px;
+	/* exact topbar height */
+	margin-top: -1px;
+	/* bleed over top border */
+	margin-bottom: -1px;
+	/* bleed over bottom border */
+	margin-right: -28px;
+	/* cancel topbar right padding */
+	margin-left: 2px;
+	position: relative;
+	z-index: 101;
+	-webkit-app-region: no-drag;
+}
+
+.wc-btn {
+	width: 52px;
+	height: 100%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border: none;
+	background: transparent;
+	cursor: pointer;
+	color: var(--soft);
+	transition: background .12s ease, color .12s ease;
+	flex-shrink: 0;
+	outline: none;
+	-webkit-app-region: no-drag;
+}
+
+.wc-btn svg {
+	display: block;
+	pointer-events: none;
+}
+
+/* Minimize */
+.wc-btn.wc-minimize:hover {
+	background: rgba(0, 0, 0, .06);
+	color: var(--ink);
+}
+
+.wc-btn.wc-minimize:active {
+	background: rgba(0, 0, 0, .12);
+}
+
+/* Maximize / Restore */
+.wc-btn.wc-maximize:hover {
+	background: rgba(0, 0, 0, .06);
+	color: var(--ink);
+}
+
+.wc-btn.wc-maximize:active {
+	background: rgba(0, 0, 0, .12);
+}
+
+/* Close — red on hover */
+.wc-btn.wc-close {
+	border-radius: 0;
+}
+
+.wc-btn.wc-close:hover {
+	background: #e81123;
+	color: #fff;
+}
+
+.wc-btn.wc-close:active {
+	background: #bf0f1d;
+	color: #fff;
+}
+
+/* Icon swap */
+.icon-restore {
+	display: none !important;
+}
+
+.icon-maximize {
+	display: block !important;
+}
+
+.wc-btn.is-maximized .icon-maximize {
+	display: none !important;
+}
+
+.wc-btn.is-maximized .icon-restore {
+	display: block !important;
 }

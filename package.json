@@ -16,7 +16,9 @@
     },
     "scripts": {
         "dev": "vite",
-        "build": "vite build"
+        "build": "vite build",
+        "zip": "node scripts/zip.cjs",
+        "release": "node scripts/release.cjs"
     },
     "devDependencies": {
         "@tailwindcss/vite": "^4.2.2",
@@ -26,6 +28,7 @@
         "vite": "^5.0"
     },
     "dependencies": {
+        "archiver": "^7.0.1",
         "flowbite": "^4.0.1"
     }
 }

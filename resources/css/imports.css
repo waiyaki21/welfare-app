@@ -841,8 +841,8 @@ input:checked+.custom-slider:before {
     gap: 6px;
     padding: 4px 8px;
     border-radius: 999px;
-    font-size: .72rem;
-    font-weight: 600;
+    font-size: .92rem;
+    font-weight: 400;
     background: rgba(45, 106, 79, 0.12);
     color: var(--forest);
     border: 1px solid rgba(15, 23, 42, 0.08);
@@ -1179,4 +1179,167 @@ input:checked+.custom-slider:before {
     border-radius: 12px;
     background: rgba(255, 255, 255, 0.55);
     grid-column: 1 / -1;
+}
+
+/* ── Year Modal: Members Tab Alert Indicator ─────────────────────────── */
+
+/* Wrapper sits inline after the tab label */
+.year-tab-alert {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 5px;
+    vertical-align: middle;
+    color: #ef4444;          /* red-500 — change to match your error colour */
+    animation: tab-alert-bounce 1s ease-in-out infinite;
+    transform-origin: center bottom;
+}
+
+/* The SVG icon inherits size from the wrapper */
+.year-tab-alert-icon {
+    display: block;
+    filter: drop-shadow(0 0 3px rgba(239, 68, 68, 0.7));
+    animation: tab-alert-pulse 1s ease-in-out infinite;
+}
+
+/* Bounce: up-down motion */
+@keyframes tab-alert-bounce {
+    0%, 100% { transform: translateY(0);    }
+    40%       { transform: translateY(-4px); }
+    60%       { transform: translateY(-2px); }
+}
+
+/* Pulse: glow intensity oscillates */
+@keyframes tab-alert-pulse {
+    0%, 100% { opacity: 1;   filter: drop-shadow(0 0 3px rgba(239, 68, 68, 0.6)); }
+    50%       { opacity: 0.75; filter: drop-shadow(0 0 6px rgba(239, 68, 68, 1));   }
+}
+
+/* ── Import Button: error state with count ────────────────────────────── */
+/* The count is now embedded in the label text by JS,
+   so no extra CSS is needed beyond your existing .import-btn-error styles.
+   The snippet below is optional — it adds a subtle badge look if you want
+   the number to stand out separately (uncomment if desired). */
+
+/*
+.import-btn-error .import-btn-error-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    margin-left: 6px;
+    border-radius: 9px;
+    background: rgba(255,255,255,0.25);
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+}
+*/
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Import Modal Updates
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── A. Template / form-section glassmorphism card ───────────────────────── */
+/* Apply .import-glass-section to the wrapping div of the template download
+   block and the upload control block inside monthly & expenditure modals.  */
+
+.import-glass-section {
+    background: rgba(255, 255, 255, 0.07);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 12px;
+    padding: 18px 20px;
+    transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.import-glass-section:hover {
+    background: rgba(255, 255, 255, 0.13);
+    border-color: rgba(255, 255, 255, 0.24);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+}
+
+/* Slightly lighter than the modal body — works on dark and semi-dark surfaces */
+.import-glass-section + .import-glass-section {
+    margin-top: 12px;
+}
+
+/* ── B. Full-width download template button ──────────────────────────────── */
+/* Add btn-primary inline-flex w-full justify-center to the button, OR use
+   the class below if your Tailwind classes are not available.              */
+
+.import-template-btn-full {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    margin-top: 10px;
+}
+
+/* ── C. Year / Month selects — full width, scrollable ───────────────────── */
+
+.import-select-full {
+    width: 100%;
+    max-height: 220px;        /* makes the dropdown scroll after ~6 items   */
+}
+
+/* Native <select> can't scroll its own dropdown, but this size attribute
+   hint plus overflow helps on some browsers. For a true scrollable picker
+   use size="1" (default) and rely on the OS scroll; the input approach
+   below is the real solution for long lists.                              */
+
+.import-year-input-wrap {
+    position: relative;
+    width: 100%;
+}
+
+.import-year-input-wrap input[type="number"],
+.import-year-input-wrap select {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* ── D. Disabled file-input / drop-zone state ───────────────────────────── */
+
+.import-disabled {
+    pointer-events: none !important;
+    opacity: 0.45 !important;
+    cursor: not-allowed !important;
+}
+
+/* ── E. Month/Year check preview panel ──────────────────────────────────── */
+
+.preview-month-check-panel {
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.preview-month-check-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.preview-month-total-row {
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    padding-top: 8px;
+    margin-top: 4px;
+    font-weight: 600;
+}
+
+.preview-month-check-hint {
+    font-size: 0.78rem;
+    opacity: 0.55;
+    text-align: center;
+    padding-top: 4px;
 }

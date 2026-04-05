@@ -130,8 +130,9 @@ export const initImportModal = ({ root, previewUrl, finalUrl, lastUploadUrl, tab
             label = 'Importing...';
             disabled = true;
         } else if (state.previewReady && hasErrors) {
+            const errorCount = handler?.getErrorCount?.(state) || 0;
             icon = icons.alert;
-            label = 'Resolve Errors';
+            label = `Resolve Errors (${errorCount})`;
             disabled = true;
         } else if (ready) {
             icon = icons.upload;
@@ -181,6 +182,10 @@ export const initImportModal = ({ root, previewUrl, finalUrl, lastUploadUrl, tab
             state.usingLastUpload = false;
         }
         preview.setErrorState(false);
+        // Hide the upload form section once a file is chosen (monthly/expenditure modals)
+        if (root.dataset.hideFormOnFile === '1' && elements.formSection) {
+            elements.formSection.style.display = 'none';
+        }
         previewFile();
     });
 
@@ -189,11 +194,22 @@ export const initImportModal = ({ root, previewUrl, finalUrl, lastUploadUrl, tab
         if (elements.dropLabel) elements.dropLabel.textContent = elements.dropLabel.dataset.default || 'Drop your .xlsx file here';
         if (elements.fileInfo) elements.fileInfo.style.display = 'none';
         if (elements.fileChip) elements.fileChip.style.display = 'none';
-        preview.showPlaceholder();
-        collapse();
+        // Restore form section for hide-on-file modals
+        if (root.dataset.hideFormOnFile === '1' && elements.formSection) {
+            elements.formSection.style.display = '';
+        }
+        // For selection-driven modals (monthly/expenditure), don't fully collapse —
+        // the handler will re-show the month/year check panel via a custom event
+        const isSelectionDriven = root.dataset.hideFormOnFile === '1';
+        if (!isSelectionDriven) {
+            preview.showPlaceholder();
+            collapse();
+        }
         reset();
         updateImportButtonState();
         preview.setErrorState(false);
+        // Let handlers re-trigger their selection-based preview
+        root.dispatchEvent(new CustomEvent('import:file-cleared'));
     };
 
     elements.clearButtons?.forEach((button) => {
@@ -321,5 +337,12 @@ export const initImportModal = ({ root, previewUrl, finalUrl, lastUploadUrl, tab
     updateImportButtonState();
     bindModalControls(root, root.id);
     handler?.bindPreviewEvents?.({ elements, state, preview, helpers: { escapeHtml, updateImportButtonState, clearFile } });
-    handler?.bindFormExtras?.({ elements, state });
+    handler?.bindFormExtras?.({
+        elements,
+        state,
+        preview,
+        helpers: { escapeHtml, updateImportButtonState, clearFile, expand, collapse },
+        checkMonthUrl: root.dataset.checkMonthUrl || null,
+        checkYearUrl: root.dataset.checkYearUrl || null,
+    });
 };

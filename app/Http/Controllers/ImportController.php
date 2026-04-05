@@ -26,7 +26,6 @@ class ImportController extends Controller
     ) {}
 
     // ── Full-year import ──────────────────────────────────────────────────────
-
     public function show()
     {
         try {
@@ -144,6 +143,7 @@ class ImportController extends Controller
 
         $path = storage_path("app/exports/expenditures_template_{$year}.xlsx");
         @mkdir(dirname($path), 0755, true);
+        // TODO: WTF
         (new Xlsx($spreadsheet))->save($path);
 
         $filename = "Expenditures_Template_{$year}.xlsx";

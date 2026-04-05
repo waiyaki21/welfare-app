@@ -89,4 +89,36 @@ class FinancialYear extends Model
         }
         return $out;
     }
+
+    // ── Latest Monthly Payments ───────────────────────────────────────────────
+
+    /**
+     * Get latest monthly summary: month name, count, total amount
+     */
+    public function latestMonthlySummary(): array
+    {
+        $latestPayment = $this->payments()
+            ->orderByDesc('month')
+            ->first();
+
+        if (!$latestPayment) {
+            return [
+                'month_number' => null,
+                'month_name'   => null,
+                'count'        => 0,
+                'total'        => 0,
+            ];
+        }
+
+        $latestMonth = $latestPayment->month;
+
+        $payments = $this->payments()->where('month', $latestMonth);
+
+        return [
+            'month_number' => $latestMonth,
+            'month_name'   => date('F', mktime(0, 0, 0, $latestMonth, 1)), // e.g., "March"
+            'count'        => $payments->count(),
+            'total'        => (float) $payments->sum('amount'),
+        ];
+    }
 }

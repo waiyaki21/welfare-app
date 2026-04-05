@@ -239,7 +239,7 @@ export const createYearHandler = () => ({
         const memberCount = (members.members || []).length || (members.total_count || 0);
 
         return tabs.map((tab) => {
-            if (tab === 'members') return { id: tab, label: 'Members', count: memberCount };
+            if (tab === 'members') return { id: tab, label: 'Members', count: memberCount, hasAlert: errorsCount > 0 };
             if (tab === 'payments') return { id: tab, label: 'Payments', count: paymentMonths };
             if (tab === 'expenses') return { id: tab, label: 'Expenses', count: expenseMonths };
             if (tab === 'errors') return { id: tab, label: 'Errors', count: errorsCount };
@@ -695,4 +695,3 @@ const renderMonthCards = (state, type, { escapeHtml, formatKES, icons }) => {
         `;
     }).join('')}</div>`;
 };
-
